@@ -113,6 +113,24 @@ class RecognitionResponse(BaseModel):
     provider: str
 
 
+class InkMathLine(BaseModel):
+    """One line transcribed by InkMath, kept separate from math evaluation."""
+
+    text: str
+    latex: str
+    legibility: Literal["clear", "uncertain"]
+    ambiguities: list[str] = Field(default_factory=list)
+
+
+class InkMathDocumentResponse(BaseModel):
+    """The safe subset of InkMath's multi-line transcription contract."""
+
+    provider: str
+    model: str | None = None
+    lines: list[InkMathLine]
+    warnings: list[str] = Field(default_factory=list)
+
+
 class OcrProviderInfo(BaseModel):
     """A safe, browser-visible description of a server-configured OCR option."""
 
@@ -756,12 +774,17 @@ def check_learning_step(
                 foundation=curriculum.foundation,
             )
         else:
+            # A learner may start directly with substituted values, repeat an
+            # equivalent simplification, or write the equality the other way
+            # round.  Each is still a valid mathematical statement.  Compare
+            # against the complete, authored solution path rather than only
+            # the next database index; progress never moves backwards.
             matching_step = next(
-                (index for index in range(next_step, len(expected)) if equations_are_equivalent(student_relation, expected[index])),
+                (index for index, relation in enumerate(expected) if equations_are_equivalent(student_relation, relation)),
                 None,
             )
             if matching_step is not None:
-                advanced_to = matching_step + 1
+                advanced_to = max(next_step, matching_step + 1)
                 complete = advanced_to == len(expected)
                 shortcut = matching_step > next_step
                 hint = (
@@ -908,8 +931,8 @@ async def recognize_with_team_ocr(request: RecognitionRequest, url: str) -> Reco
     )
 
 
-async def recognize_with_inkmath(request: RecognitionRequest) -> RecognitionResponse:
-    """Translate InkMath's reviewed-line OCR contract into the tutor contract."""
+async def recognize_inkmath_document(request: RecognitionRequest) -> InkMathDocumentResponse:
+    """Proxy InkMath's complete, ordered transcription without exposing its key."""
 
     async with httpx.AsyncClient(timeout=50) as client:
         response = await client.post(inkmath_ocr_url(), json={"image": request.imageData})
@@ -918,13 +941,40 @@ async def recognize_with_inkmath(request: RecognitionRequest) -> RecognitionResp
     lines = result.get("lines", [])
     if not isinstance(lines, list) or not lines:
         raise ValueError("InkMath returned no readable mathematical line.")
-    first_line = lines[0]
-    raw_latex = first_line.get("latex")
-    if not isinstance(raw_latex, str) or not raw_latex.strip():
+    return InkMathDocumentResponse(
+        provider="InkMath",
+        model=result.get("model"),
+        lines=lines,
+        warnings=result.get("warnings", []),
+    )
+
+
+async def recognize_with_inkmath(request: RecognitionRequest) -> RecognitionResponse:
+    """Adapt InkMath's first line for the older single-step OCR contract."""
+
+    document = await recognize_inkmath_document(request)
+    first_line = document.lines[0]
+    raw_latex = first_line.latex
+    if not raw_latex.strip():
         raise ValueError("InkMath could not produce LaTeX for this line.")
-    confidence = 0.91 if first_line.get("legibility") == "clear" else 0.55
-    provider = f"InkMath ({result.get('model', 'structured handwriting OCR')})"
+    confidence = 0.91 if first_line.legibility == "clear" else 0.55
+    provider = f"InkMath ({document.model or 'structured handwriting OCR'})"
     return RecognitionResponse(rawLatex=raw_latex, confidence=confidence, provider=provider)
+
+
+@app.post("/recognize-handwriting/inkmath", response_model=InkMathDocumentResponse)
+async def recognize_full_inkmath_document(request: RecognitionRequest) -> InkMathDocumentResponse:
+    """Use one canvas snapshot so InkMath retains line order and uncertainty notes."""
+
+    if request.providerId != "inkmath":
+        raise HTTPException(status_code=422, detail="This endpoint is only for the InkMath provider.")
+    try:
+        return await recognize_inkmath_document(request)
+    except (httpx.HTTPError, KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="InkMath OCR is unavailable. Start the InkMath server at port 3000 with GEMINI_API_KEY configured.",
+        ) from exc
 
 
 @app.post("/recognize-handwriting", response_model=RecognitionResponse)

@@ -2,7 +2,7 @@ import secrets
 
 from fastapi.testclient import TestClient
 
-from main import app, practice_problem
+from main import app, database_connection, practice_problem
 
 
 client = TestClient(app)
@@ -126,6 +126,40 @@ def test_learning_session_explains_a_foundational_error():
     assert review.status_code == 200
     assert review.json()["findings"][0]["rawLatex"] == "a + b^2 = c^2"
     assert review.json()["findings"][0]["errorType"] == "missing_square"
+
+
+def test_learning_session_accepts_a_correct_numeric_solution_chain():
+    """Equivalent numeric steps and reversed equalities remain correct."""
+    learner = TestClient(app)
+    email = f"numeric-chain-{secrets.token_hex(6)}@example.test"
+    learner.post(
+        "/auth/register",
+        json={
+            "fullName": "Numeric Student",
+            "email": email,
+            "password": "safe-practice-password",
+            "grade": 7,
+            "country": "United States",
+            "state": "Oregon",
+        },
+    )
+    practice_session_id = f"numeric-chain-{secrets.token_hex(6)}"
+    with database_connection() as connection:
+        connection.execute(
+            "INSERT INTO practice_sessions (id, student_id, problem_key, next_step, created_at) VALUES (?, ?, ?, ?, ?)",
+            (practice_session_id, learner.get("/me").json()["id"], "pythagoras_3_4_5", 0, 0),
+        )
+
+    steps = ["3^2 + 4^2 = c^2", "9 + 16 = c^2", r"\sqrt{25} = c", "5 = c"]
+    results = [
+        learner.post(
+            f"/learning-sessions/{practice_session_id}/steps",
+            json={"rawLatex": raw_latex, "confidence": 0.91, "timestamp": 1234567890},
+        ).json()
+        for raw_latex in steps
+    ]
+    assert [result["status"] for result in results] == ["correct", "correct", "correct", "correct"]
+    assert results[-1]["complete"] is True
 
 
 def test_adaptive_tutor_uses_visual_preference_then_socratic_support():

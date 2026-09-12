@@ -82,12 +82,27 @@
             <div id="error-markers" class="error-markers" aria-hidden="true"></div>
           </div>
 
+          <section id="inkmath-transcript" class="inkmath-transcript hidden" aria-live="polite">
+            <div class="inkmath-heading">
+              <div>
+                <p class="eyebrow">Handwriting transcription</p>
+                <strong id="inkmath-title">InkMath is reading your work</strong>
+              </div>
+              <span id="inkmath-badge" class="inkmath-badge">InkMath</span>
+            </div>
+            <p id="inkmath-summary" class="caption"></p>
+            <div id="inkmath-lines" class="inkmath-lines"></div>
+          </section>
+
           <div class="recognition-panel">
             <div class="recognition-heading">
               <div>
                 <p class="eyebrow">Current step</p>
                 <p class="caption">Enter the equation for the line you want feedback on.</p>
               </div>
+              <label class="ocr-picker">OCR engine
+                <select id="ocr-provider" aria-label="Handwriting recognition engine"></select>
+              </label>
             </div>
             <label class="sr-only" for="latex-input">Equation for current step</label>
             <textarea id="latex-input" rows="2" spellcheck="false" placeholder="Example: a^2 + b^2 = c^2"></textarea>

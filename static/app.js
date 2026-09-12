@@ -43,6 +43,12 @@ const workedHandoff = document.querySelector('#worked-handoff');
 const visualBoard = document.querySelector('#visual-board');
 const visualCue = document.querySelector('#visual-cue');
 const reviewFindings = document.querySelector('#review-findings');
+const ocrProviderPicker = document.querySelector('#ocr-provider');
+const inkmathTranscript = document.querySelector('#inkmath-transcript');
+const inkmathTitle = document.querySelector('#inkmath-title');
+const inkmathBadge = document.querySelector('#inkmath-badge');
+const inkmathSummary = document.querySelector('#inkmath-summary');
+const inkmathLines = document.querySelector('#inkmath-lines');
 
 let strokes = [];
 let activeStroke = null;
@@ -86,6 +92,7 @@ function clearWriting() {
   redraw();
   placeholder.classList.remove('hidden');
   errorMarkers.replaceChildren();
+  clearInkMathTranscription();
 }
 
 function relativePoint(event) {
@@ -152,12 +159,33 @@ function clearTutorGuidance() {
 
 async function loadDefaultOcrProvider() {
   try {
-    const response = await fetch('/ocr-default');
-    if (response.ok) defaultOcrProvider = (await response.json()).providerId;
+    const [providersResponse, defaultResponse] = await Promise.all([
+      fetch('/ocr-providers'), fetch('/ocr-default'),
+    ]);
+    const providers = providersResponse.ok ? await providersResponse.json() : [];
+    if (defaultResponse.ok) defaultOcrProvider = (await defaultResponse.json()).providerId;
+    ocrProviderPicker.replaceChildren(...providers.map((provider) => {
+      const option = document.createElement('option');
+      option.value = provider.id;
+      option.textContent = provider.configured ? provider.label : `${provider.label} (not connected)`;
+      option.disabled = !provider.configured;
+      return option;
+    }));
+    ocrProviderPicker.value = defaultOcrProvider;
+    if (!ocrProviderPicker.value && providers.some((provider) => provider.configured)) {
+      defaultOcrProvider = providers.find((provider) => provider.configured).id;
+      ocrProviderPicker.value = defaultOcrProvider;
+    }
   } catch (_) {
-    defaultOcrProvider = 'local-pix2tex';
+    defaultOcrProvider = 'inkmath';
   }
 }
+
+ocrProviderPicker.addEventListener('change', () => {
+  defaultOcrProvider = ocrProviderPicker.value;
+  clearInkMathTranscription();
+  hideOcrMessage();
+});
 
 function setAuthMode(mode) {
   authMode = mode;
@@ -322,6 +350,71 @@ function lineImageData(line) {
   return image.toDataURL('image/png');
 }
 
+function fullWritingImageData() {
+  const points = strokes.flat();
+  if (!points.length) return null;
+  const padding = 32;
+  const left = Math.max(0, Math.min(...points.map((point) => point.x)) - padding);
+  const top = Math.max(0, Math.min(...points.map((point) => point.y)) - padding);
+  const right = Math.min(canvas.clientWidth, Math.max(...points.map((point) => point.x)) + padding);
+  const bottom = Math.min(canvas.clientHeight, Math.max(...points.map((point) => point.y)) + padding);
+  const scale = window.devicePixelRatio || 1;
+  const image = document.createElement('canvas');
+  image.width = Math.max(80, Math.round((right - left) * scale));
+  image.height = Math.max(80, Math.round((bottom - top) * scale));
+  const imageContext = image.getContext('2d');
+  imageContext.fillStyle = '#fffef8';
+  imageContext.fillRect(0, 0, image.width, image.height);
+  imageContext.drawImage(
+    canvas,
+    Math.round(left * scale), Math.round(top * scale), Math.round((right - left) * scale), Math.round((bottom - top) * scale),
+    0, 0, image.width, image.height,
+  );
+  return image.toDataURL('image/png');
+}
+
+function clearInkMathTranscription() {
+  inkmathTranscript.classList.add('hidden');
+  inkmathLines.replaceChildren();
+}
+
+function showInkMathTranscription(recognition) {
+  inkmathTitle.textContent = 'InkMath read your working';
+  inkmathBadge.textContent = recognition.model || 'InkMath';
+  const uncertainCount = recognition.lines.filter((line) => line.legibility === 'uncertain').length;
+  inkmathSummary.textContent = uncertainCount
+    ? `It found ${recognition.lines.length} line${recognition.lines.length === 1 ? '' : 's'}; ${uncertainCount} needs a quick visual check.`
+    : `It found ${recognition.lines.length} line${recognition.lines.length === 1 ? '' : 's'} in reading order and sent them to Math Coach.`;
+  inkmathLines.replaceChildren(...recognition.lines.map((line, index) => {
+    const card = document.createElement('div');
+    card.className = `inkmath-line ${line.legibility}`;
+    const heading = document.createElement('div');
+    heading.className = 'inkmath-line-head';
+    heading.textContent = `Line ${index + 1} · ${line.legibility === 'clear' ? 'read clearly' : 'please verify'}`;
+    const latex = document.createElement('code');
+    latex.textContent = line.latex || line.text || 'No mathematical expression detected';
+    card.append(heading, latex);
+    if (line.ambiguities?.length) {
+      const warning = document.createElement('p');
+      warning.className = 'inkmath-warning';
+      warning.textContent = `Check: ${line.ambiguities.join(' · ')}`;
+      card.append(warning);
+    }
+    return card;
+  }));
+  inkmathTranscript.classList.remove('hidden');
+}
+
+async function recognizeFullWritingWithInkMath(imageData) {
+  const response = await fetch('/recognize-handwriting/inkmath', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ imageData, sessionId, stepIndex, providerId: 'inkmath' }),
+  });
+  const recognition = await response.json();
+  if (!response.ok) throw new Error(recognition.detail || 'InkMath could not read the handwriting.');
+  return recognition;
+}
+
 async function submitRecognizedLine(imageData) {
   const recognitionResponse = await fetch('/recognize-handwriting', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -336,6 +429,17 @@ async function submitRecognizedLine(imageData) {
   const step = await stepResponse.json();
   if (!stepResponse.ok) throw new Error(step.detail || 'A recognized line could not be checked.');
   step.recognizedLatex = recognition.rawLatex;
+  return step;
+}
+
+async function submitRecognizedLatex(rawLatex, legibility) {
+  const stepResponse = await fetch(`/learning-sessions/${learningSessionId}/steps`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rawLatex, confidence: legibility === 'clear' ? 0.91 : 0.55, timestamp: Date.now() }),
+  });
+  const step = await stepResponse.json();
+  if (!stepResponse.ok) throw new Error(step.detail || 'A recognized line could not be checked.');
+  step.recognizedLatex = rawLatex;
   return step;
 }
 
@@ -399,18 +503,35 @@ async function fetchAndDisplaySolutionReview(recognizedLines = [], lineResults =
 reviewButton.addEventListener('click', async () => {
   if (!learningSessionId) { showOcrMessage('Choose a new problem before reviewing the solution.'); return; }
   const handwrittenLines = handwritingLineGroups();
+  if (!handwrittenLines.length) { showOcrMessage('Write your working on the notepad before reviewing it.'); return; }
   reviewButton.disabled = true;
-  reviewButton.textContent = handwrittenLines.length ? 'Reading writing…' : 'Reviewing…';
+  reviewButton.textContent = 'Reading writing…';
   try {
     const recognizedLines = [];
     const lineResults = [];
-    for (let index = 0; index < handwrittenLines.length; index += 1) {
-      reviewButton.textContent = `Reading line ${index + 1} of ${handwrittenLines.length}…`;
-      const checkedLine = await submitRecognizedLine(lineImageData(handwrittenLines[index]));
-      recognizedLines.push(checkedLine.recognizedLatex);
-      lineResults.push({ ...checkedLine, lineNumber: index + 1, centerY: handwrittenLines[index].centerY });
-      applyTutorGuidance(checkedLine.tutor);
-      stepIndex = checkedLine.nextStep;
+    if (defaultOcrProvider === 'inkmath') {
+      const recognition = await recognizeFullWritingWithInkMath(fullWritingImageData());
+      showInkMathTranscription(recognition);
+      for (let index = 0; index < recognition.lines.length; index += 1) {
+        reviewButton.textContent = `Checking line ${index + 1} of ${recognition.lines.length}…`;
+        const line = recognition.lines[index];
+        const checkedLine = await submitRecognizedLatex(line.latex, line.legibility);
+        recognizedLines.push(checkedLine.recognizedLatex);
+        const matchingInkLine = handwrittenLines[Math.min(index, handwrittenLines.length - 1)];
+        lineResults.push({ ...checkedLine, lineNumber: index + 1, centerY: matchingInkLine.centerY });
+        applyTutorGuidance(checkedLine.tutor);
+        stepIndex = checkedLine.nextStep;
+      }
+    } else {
+      clearInkMathTranscription();
+      for (let index = 0; index < handwrittenLines.length; index += 1) {
+        reviewButton.textContent = `Reading line ${index + 1} of ${handwrittenLines.length}…`;
+        const checkedLine = await submitRecognizedLine(lineImageData(handwrittenLines[index]));
+        recognizedLines.push(checkedLine.recognizedLatex);
+        lineResults.push({ ...checkedLine, lineNumber: index + 1, centerY: handwrittenLines[index].centerY });
+        applyTutorGuidance(checkedLine.tutor);
+        stepIndex = checkedLine.nextStep;
+      }
     }
     showErrorMarkers(lineResults);
     await fetchAndDisplaySolutionReview(recognizedLines, lineResults);
