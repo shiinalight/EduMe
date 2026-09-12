@@ -162,6 +162,65 @@ def test_learning_session_accepts_a_correct_numeric_solution_chain():
     assert results[-1]["complete"] is True
 
 
+def test_algebraic_equations_topic_checks_each_balancing_step():
+    learner = TestClient(app)
+    email = f"algebra-topic-{secrets.token_hex(6)}@example.test"
+    learner.post(
+        "/auth/register",
+        json={
+            "fullName": "Algebra Student",
+            "email": email,
+            "password": "safe-practice-password",
+            "grade": 8,
+            "country": "United States",
+            "state": "Oregon",
+        },
+    )
+    session = learner.post("/learning-sessions", json={"topicKey": "algebraic_equations"}).json()
+    assert session["topic"] == "Algebraic equations"
+    assert session["foundation"] == "Solving algebraic equations"
+    assert "2x + 3 = 11" in session["prompt"]
+
+    results = [
+        learner.post(
+            f"/learning-sessions/{session['sessionId']}/steps",
+            json={"rawLatex": raw_latex, "confidence": 0.91, "timestamp": 1234567890},
+        ).json()
+        for raw_latex in ["2x + 3 = 11", "2x = 8", "x = 4"]
+    ]
+    assert [result["status"] for result in results] == ["correct", "correct", "correct"]
+    assert results[-1]["complete"] is True
+
+
+def test_learning_session_explains_a_numeric_transcription_disagreement():
+    learner = TestClient(app)
+    email = f"numeric-hint-{secrets.token_hex(6)}@example.test"
+    learner.post(
+        "/auth/register",
+        json={
+            "fullName": "Feedback Student",
+            "email": email,
+            "password": "safe-practice-password",
+            "grade": 7,
+            "country": "United States",
+            "state": "Oregon",
+        },
+    )
+    with database_connection() as connection:
+        session_id = f"numeric-hint-{secrets.token_hex(6)}"
+        connection.execute(
+            "INSERT INTO practice_sessions (id, student_id, problem_key, next_step, created_at) VALUES (?, ?, ?, ?, ?)",
+            (session_id, learner.get("/me").json()["id"], "pythagoras_8_15_17", 0, 0),
+        )
+    result = learner.post(
+        f"/learning-sessions/{session_id}/steps",
+        json={"rawLatex": "64 + 255 = c^2", "confidence": 0.91, "timestamp": 1234567890},
+    ).json()
+    assert result["status"] == "error"
+    assert "64 + 225 = 289" in result["hint"]
+    assert "transcription" in result["hint"]
+
+
 def test_adaptive_tutor_uses_visual_preference_then_socratic_support():
     learner = TestClient(app)
     email = f"learner-{secrets.token_hex(6)}@example.test"

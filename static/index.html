@@ -33,13 +33,49 @@
       </form>
     </section>
 
+    <main id="learning-home" class="learning-home hidden">
+      <header class="home-topbar">
+        <div class="brand-lockup"><span class="brand-mark">✦</span><span>Brighter Steps</span></div>
+        <div class="home-account"><span id="home-student-name"></span><button id="home-logout-button" class="text-button" type="button">Sign out</button></div>
+      </header>
+
+      <section id="dashboard-view" class="dashboard-view">
+        <div class="maths-simple-intro">
+          <p class="eyebrow">Mathematics · Grade <span id="home-grade">8</span></p>
+          <h1>Your maths journey</h1>
+          <p id="home-subtitle">See what you know, and what to practise next.</p>
+        </div>
+
+        <section class="topic-connection" aria-labelledby="connection-title">
+          <div class="section-heading"><div><p class="eyebrow">How the ideas connect</p><h2 id="connection-title">Build one idea on another</h2></div></div>
+          <div class="connection-path">
+            <article class="connection-topic foundation-topic"><span class="connection-icon">x²</span><div><strong>Square numbers</strong><small>Learn why 8² means 8 × 8.</small></div><b>52%</b></article>
+            <span class="connection-arrow" aria-hidden="true">→</span>
+            <button id="home-pythagoras-topic" class="connection-topic active-topic" type="button"><span class="connection-icon">△</span><span><strong>Pythagoras’ theorem</strong><small>Use squares to find a missing side.</small></span><b>68%</b></button>
+            <span class="connection-arrow" aria-hidden="true">→</span>
+            <button id="home-algebra-topic" class="connection-topic active-topic" type="button"><span class="connection-icon">x=</span><span><strong>Algebraic equations</strong><small>Keep both sides balanced.</small></span><b>76%</b></button>
+          </div>
+        </section>
+
+        <section class="topic-progress-section" aria-labelledby="topic-progress-title">
+          <div class="section-heading"><div><p class="eyebrow">Your progress</p><h2 id="topic-progress-title">Topics you are learning</h2></div><p class="section-caption">The bars grow as you practise.</p></div>
+          <div class="topic-progress-list">
+            <article class="topic-progress-row"><span class="progress-topic-icon square-icon">x²</span><div><strong>Square numbers &amp; roots</strong><small>This helps with Pythagoras.</small><span class="topic-progress-track"><i style="width:52%"></i></span></div><b>52%</b></article>
+            <button id="start-pythagoras-button" class="topic-progress-row current-progress" type="button"><span class="progress-topic-icon triangle-icon">△</span><span><strong>Pythagoras’ theorem</strong><small>Ready for your next practice.</small><span class="topic-progress-track"><i style="width:68%"></i></span></span><b>68% <em>Practise →</em></b></button>
+            <button id="start-algebra-button" class="topic-progress-row" type="button"><span class="progress-topic-icon equation-icon">x=</span><span><strong>Algebraic equations</strong><small>Keep both sides balanced as you solve.</small><span class="topic-progress-track"><i style="width:76%"></i></span></span><b>76% <em>Practise →</em></b></button>
+          </div>
+        </section>
+      </section>
+    </main>
+
     <main id="learning-app" class="app-shell hidden">
       <header class="topbar">
         <div>
-          <p class="eyebrow">Pythagoras practice</p>
+          <p id="practice-topic-label" class="eyebrow">Pythagoras practice</p>
           <h1>Work it out</h1>
         </div>
         <div class="student-menu">
+          <button id="back-to-topics" class="text-button" type="button">← Mathematics</button>
           <div class="session-status"><span class="status-dot"></span><span id="connection-label">Ready</span></div>
           <span id="student-summary" class="student-summary"></span>
           <button id="logout-button" class="text-button" type="button">Sign out</button>
@@ -92,6 +128,7 @@
             </div>
             <p id="inkmath-summary" class="caption"></p>
             <div id="inkmath-lines" class="inkmath-lines"></div>
+            <button id="recheck-transcription" class="secondary-button recheck-transcription hidden" type="button">Review corrected transcription</button>
           </section>
 
           <div class="recognition-panel">

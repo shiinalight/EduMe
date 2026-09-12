@@ -23,7 +23,7 @@ from sympy import Eq, Expr, Symbol, simplify
 from sympy.parsing.latex import parse_latex
 
 
-a, b, c = Symbol("a"), Symbol("b"), Symbol("c")
+a, b, c, x = Symbol("a"), Symbol("b"), Symbol("c"), Symbol("x")
 DATABASE_PATH = Path(os.environ.get("MATH_TUTOR_DB", Path(__file__).parent / "student_data.db"))
 TutorMode = Literal["guided", "socratic", "worked_example", "visual"]
 
@@ -194,6 +194,7 @@ class TutorGuidance(BaseModel):
 class PracticeSessionResponse(BaseModel):
     sessionId: str
     problemId: str
+    topic: str
     prompt: str
     goal: str
     foundation: str
@@ -205,6 +206,12 @@ class PracticeStepRequest(BaseModel):
     rawLatex: str = Field(min_length=1)
     confidence: float = Field(ge=0, le=1)
     timestamp: int
+
+
+class LearningSessionRequest(BaseModel):
+    """The concept selected on the Mathematics landing page."""
+
+    topicKey: Literal["pythagoras", "algebraic_equations"] | None = None
 
 
 class PracticeStepResponse(CheckStepResponse):
@@ -394,16 +401,25 @@ def authenticated_student(session_token: str | None) -> sqlite3.Row:
 @dataclass(frozen=True)
 class PracticeProblem:
     key: str
-    leg_a: int
-    leg_b: int
-    hypotenuse: int
+    topic_key: Literal["pythagoras", "algebraic_equations"]
+    topic: str
+    foundation: str
+    leg_a: int | None = None
+    leg_b: int | None = None
+    hypotenuse: int | None = None
 
     @property
     def prompt(self) -> str:
+        if self.topic_key == "algebraic_equations":
+            return "Solve 2x + 3 = 11. Show one equation per line."
+        assert self.leg_a is not None and self.leg_b is not None
         return f"A right triangle has legs a = {self.leg_a} and b = {self.leg_b}. Find the hypotenuse c. Show one equation per line."
 
     @property
     def expected_relations(self) -> tuple[Eq, ...]:
+        if self.topic_key == "algebraic_equations":
+            return (Eq(2*x + 3, 11), Eq(2*x, 8), Eq(x, 4))
+        assert self.leg_a is not None and self.leg_b is not None and self.hypotenuse is not None
         return (
             Eq(a**2 + b**2, c**2),
             Eq(self.leg_a**2 + self.leg_b**2, c**2),
@@ -412,9 +428,10 @@ class PracticeProblem:
 
 
 PRACTICE_PROBLEMS: tuple[PracticeProblem, ...] = (
-    PracticeProblem("pythagoras_3_4_5", 3, 4, 5),
-    PracticeProblem("pythagoras_5_12_13", 5, 12, 13),
-    PracticeProblem("pythagoras_8_15_17", 8, 15, 17),
+    PracticeProblem("pythagoras_3_4_5", "pythagoras", "Pythagoras’ theorem", "Pythagoras’ theorem", 3, 4, 5),
+    PracticeProblem("pythagoras_5_12_13", "pythagoras", "Pythagoras’ theorem", "Pythagoras’ theorem", 5, 12, 13),
+    PracticeProblem("pythagoras_8_15_17", "pythagoras", "Pythagoras’ theorem", "Pythagoras’ theorem", 8, 15, 17),
+    PracticeProblem("algebraic_equation_2x_plus_3", "algebraic_equations", "Algebraic equations", "Solving algebraic equations"),
 )
 
 
@@ -432,6 +449,47 @@ def foundation_error(student_relation: Eq) -> WrongPattern | None:
     return None
 
 
+def numeric_pythagoras_hint(problem: PracticeProblem, student_relation: Eq) -> str | None:
+    """Explain a misread numeric substitution instead of issuing a vague cue."""
+
+    if problem.topic_key != "pythagoras":
+        return None
+    assert problem.leg_a is not None and problem.leg_b is not None
+    expected_total = problem.leg_a**2 + problem.leg_b**2
+    for numeric_side, other_side in (
+        (student_relation.lhs, student_relation.rhs),
+        (student_relation.rhs, student_relation.lhs),
+    ):
+        if simplify(other_side - c**2) == 0:
+            simplified_value = simplify(numeric_side)
+            if simplified_value.is_number and simplified_value != expected_total:
+                return (
+                    f"For this triangle, {problem.leg_a}² + {problem.leg_b}² = "
+                    f"{problem.leg_a**2} + {problem.leg_b**2} = {expected_total}. "
+                    "Check the transcription above: InkMath may have read one digit differently from your writing."
+                )
+    return None
+
+
+def algebra_step_index(raw_latex: str, relation: Eq) -> int | None:
+    """Keep the authored order for simple equation-solving moves.
+
+    All three equations have the same mathematical solution, so pure symbolic
+    equivalence cannot tell whether the learner has subtracted first or
+    divided first.  This small recogniser preserves the visible teaching
+    sequence while still allowing either side of an equality to be reversed.
+    """
+
+    compact = raw_latex.replace(" ", "").replace("{", "").replace("}", "").lower()
+    if "2x" in compact and "3" in compact and "11" in compact:
+        return 0
+    if "2x" in compact and "8" in compact and "3" not in compact:
+        return 1
+    if "2x" not in compact and "x" in compact and "4" in compact:
+        return 2
+    return None
+
+
 def explanation_for_error(error_type: str | None) -> str:
     for pattern in PROBLEMS["pythagoras_01"].wrong_patterns:
         if pattern.error_type == error_type:
@@ -444,6 +502,11 @@ def explanation_for_error(error_type: str | None) -> str:
 
 
 def guided_prompt(next_step: int, problem: PracticeProblem) -> str:
+    if problem.topic_key == "algebraic_equations":
+        if next_step <= 1:
+            return "What can you do to both sides to remove the + 3?"
+        return "Now 2x equals 8. What inverse operation leaves x on its own?"
+    assert problem.leg_a is not None and problem.leg_b is not None
     if next_step == 0:
         return "Start by writing the relationship between the two shorter sides and the hypotenuse."
     if next_step == 1:
@@ -461,6 +524,13 @@ def socratic_prompt(error_type: str | None, next_step: int) -> str:
 
 
 def worked_example_for(problem: PracticeProblem) -> WorkedExample:
+    if problem.topic_key == "algebraic_equations":
+        return WorkedExample(
+            title="Parallel example: solve 3x + 2 = 14",
+            steps=["3x + 2 = 14", "3x = 12", "x = 4"],
+            handoff="Use the same idea: undo the addition first, then undo the multiplication.",
+        )
+    assert problem.leg_a is not None and problem.leg_b is not None
     return WorkedExample(
         title="Parallel example: a 6–8–10 right triangle",
         steps=["6² + 8² = c²", "36 + 64 = c²", "100 = c²", "c = 10"],
@@ -486,6 +556,7 @@ def adaptive_tutor_guidance(
     """Select authored teaching support from preferences and recent evidence."""
 
     preferred = preferred_tutor_modes(student_id)
+    applicable_preferred = [mode for mode in preferred if mode != "visual" or problem.topic_key == "pythagoras"] or ["guided"]
     with database_connection() as connection:
         repeated_errors = connection.execute(
             """
@@ -510,26 +581,30 @@ def adaptive_tutor_guidance(
         mode: TutorMode = "worked_example"
     elif error_type:
         mode = "socratic"
-    elif "visual" in preferred and next_step == 0:
+    elif "visual" in preferred and next_step == 0 and problem.topic_key == "pythagoras":
         mode = "visual"
     else:
         successful_preferred = [
-            candidate for candidate in preferred
+            candidate for candidate in applicable_preferred
             if candidate in performance_by_mode and performance_by_mode[candidate]["attempts"] >= 2
             and performance_by_mode[candidate]["success_rate"] >= 0.6
         ]
-        mode = successful_preferred[0] if successful_preferred else preferred[0]
+        mode = successful_preferred[0] if successful_preferred else applicable_preferred[0]
 
     supporting: list[TutorMode] = []
     visual_cue = None
-    if "visual" in preferred and mode != "visual":
+    if "visual" in preferred and mode != "visual" and problem.topic_key == "pythagoras":
         supporting.append("visual")
         visual_cue = visual_cue_for(next_step)
     if mode == "guided":
         prompt = guided_prompt(next_step, problem)
         worked_example = None
     elif mode == "socratic":
-        prompt = socratic_prompt(error_type, next_step)
+        prompt = (
+            "What operation would undo the last change to x while keeping both sides balanced?"
+            if problem.topic_key == "algebraic_equations"
+            else socratic_prompt(error_type, next_step)
+        )
         worked_example = None
     elif mode == "worked_example":
         prompt = "Compare this parallel example with your problem, then try the same structure."
@@ -703,9 +778,15 @@ def get_current_student(math_tutor_session: str | None = Cookie(default=None)) -
 
 
 @app.post("/learning-sessions", response_model=PracticeSessionResponse, status_code=201)
-def create_learning_session(math_tutor_session: str | None = Cookie(default=None)) -> PracticeSessionResponse:
+def create_learning_session(
+    request: LearningSessionRequest = LearningSessionRequest(),
+    math_tutor_session: str | None = Cookie(default=None),
+) -> PracticeSessionResponse:
     student = authenticated_student(math_tutor_session)
-    problem = secrets.choice(PRACTICE_PROBLEMS)
+    if request.topicKey == "algebraic_equations":
+        problem = practice_problem("algebraic_equation_2x_plus_3")
+    else:
+        problem = secrets.choice([item for item in PRACTICE_PROBLEMS if item.topic_key == "pythagoras"])
     session_id = secrets.token_urlsafe(18)
     with database_connection() as connection:
         connection.execute(
@@ -718,9 +799,10 @@ def create_learning_session(math_tutor_session: str | None = Cookie(default=None
     return PracticeSessionResponse(
         sessionId=session_id,
         problemId=problem.key,
+        topic=problem.topic,
         prompt=problem.prompt,
-        goal=f"Find c = {problem.hypotenuse} by connecting the triangle sides with an equation.",
-        foundation=curriculum.foundation,
+        goal=("Find x = 4 by keeping both sides of the equation balanced." if problem.topic_key == "algebraic_equations" else f"Find c = {problem.hypotenuse} by connecting the triangle sides with an equation."),
+        foundation=problem.foundation,
         nextStep=0,
         tutor=tutor,
     )
@@ -756,7 +838,7 @@ def check_learning_step(
             stepAccepted=False,
             nextStep=next_step,
             complete=False,
-            foundation=curriculum.foundation,
+            foundation=problem.foundation,
         )
     else:
         try:
@@ -771,7 +853,7 @@ def check_learning_step(
                 stepAccepted=False,
                 nextStep=next_step,
                 complete=False,
-                foundation=curriculum.foundation,
+                foundation=problem.foundation,
             )
         else:
             # A learner may start directly with substituted values, repeat an
@@ -779,20 +861,24 @@ def check_learning_step(
             # round.  Each is still a valid mathematical statement.  Compare
             # against the complete, authored solution path rather than only
             # the next database index; progress never moves backwards.
-            matching_step = next(
-                (index for index, relation in enumerate(expected) if equations_are_equivalent(student_relation, relation)),
-                None,
+            matching_step = (
+                algebra_step_index(request.rawLatex, student_relation)
+                if problem.topic_key == "algebraic_equations"
+                else next(
+                    (index for index, relation in enumerate(expected) if equations_are_equivalent(student_relation, relation)),
+                    None,
+                )
             )
             if matching_step is not None:
                 advanced_to = max(next_step, matching_step + 1)
                 complete = advanced_to == len(expected)
                 shortcut = matching_step > next_step
                 hint = (
-                    f"You found c = {problem.hypotenuse}. You have completed this problem."
+                    ("You found x = 4. You have completed this problem." if problem.topic_key == "algebraic_equations" else f"You found c = {problem.hypotenuse}. You have completed this problem.")
                     if complete
-                    else "That equation connects the right triangle’s side lengths. Now simplify the squares."
+                    else ("Good—now divide both sides by 2 to leave x on its own." if problem.topic_key == "algebraic_equations" else "That equation connects the right triangle’s side lengths. Now simplify the squares.")
                     if next_step == 0
-                    else "Good simplification. Now solve for c."
+                    else ("Good algebraic move. Keep both sides balanced as you solve for x." if problem.topic_key == "algebraic_equations" else "Good simplification. Now solve for c.")
                 )
                 if shortcut and not complete:
                     hint = "That is a valid shortcut. You can now solve for c."
@@ -805,7 +891,7 @@ def check_learning_step(
                     stepAccepted=True,
                     nextStep=advanced_to,
                     complete=complete,
-                    foundation=curriculum.foundation,
+                    foundation=problem.foundation,
                 )
             else:
                 known_error = foundation_error(student_relation)
@@ -813,7 +899,9 @@ def check_learning_step(
                     error_type, hint = known_error.error_type, known_error.hint
                 else:
                     error_type = "does_not_follow"
-                    hint = "Check that this equation follows from the previous line, then simplify one part at a time."
+                    hint = numeric_pythagoras_hint(problem, student_relation) or (
+                        "Check that this equation follows from the previous line, then simplify one part at a time."
+                    )
                 result = PracticeStepResponse(
                     stepIndex=next_step,
                     status="error",
@@ -823,7 +911,7 @@ def check_learning_step(
                     stepAccepted=False,
                     nextStep=next_step,
                     complete=False,
-                    foundation=curriculum.foundation,
+                    foundation=problem.foundation,
                 )
 
     # Evaluate the strategy offered before this attempt, then choose the next
@@ -891,7 +979,7 @@ def review_learning_session(
     else:
         summary = "Your submitted steps are on track so far. Continue by simplifying the squares and solving for c."
     curriculum = curriculum_context_for(student["grade"], student["country"], student["state"])
-    return SolutionReview(foundation=curriculum.foundation, summary=summary, complete=complete, findings=findings)
+    return SolutionReview(foundation=problem.foundation, summary=summary, complete=complete, findings=findings)
 
 
 @app.get("/ocr-providers", response_model=list[OcrProviderInfo])

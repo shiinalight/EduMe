@@ -16,6 +16,8 @@ const resultHint = document.querySelector('#result-hint');
 const connectionLabel = document.querySelector('#connection-label');
 const authScreen = document.querySelector('#auth-screen');
 const learningApp = document.querySelector('#learning-app');
+const learningHome = document.querySelector('#learning-home');
+const dashboardView = document.querySelector('#dashboard-view');
 const authForm = document.querySelector('#auth-form');
 const authTitle = document.querySelector('#auth-title');
 const authDescription = document.querySelector('#auth-description');
@@ -25,6 +27,16 @@ const authMessage = document.querySelector('#auth-message');
 const profileFields = document.querySelector('#profile-fields');
 const studentSummary = document.querySelector('#student-summary');
 const logoutButton = document.querySelector('#logout-button');
+const homeStudentName = document.querySelector('#home-student-name');
+const homeLogoutButton = document.querySelector('#home-logout-button');
+const homeSubtitle = document.querySelector('#home-subtitle');
+const homeGrade = document.querySelector('#home-grade');
+const backToTopicsButton = document.querySelector('#back-to-topics');
+const homePythagorasTopicButton = document.querySelector('#home-pythagoras-topic');
+const startPythagorasButton = document.querySelector('#start-pythagoras-button');
+const homeAlgebraTopicButton = document.querySelector('#home-algebra-topic');
+const startAlgebraButton = document.querySelector('#start-algebra-button');
+const practiceTopicLabel = document.querySelector('#practice-topic-label');
 const problemPrompt = document.querySelector('#problem-prompt');
 const problemGoal = document.querySelector('#problem-goal');
 const newProblemButton = document.querySelector('#new-problem-button');
@@ -49,6 +61,7 @@ const inkmathTitle = document.querySelector('#inkmath-title');
 const inkmathBadge = document.querySelector('#inkmath-badge');
 const inkmathSummary = document.querySelector('#inkmath-summary');
 const inkmathLines = document.querySelector('#inkmath-lines');
+const recheckTranscriptionButton = document.querySelector('#recheck-transcription');
 
 let strokes = [];
 let activeStroke = null;
@@ -56,6 +69,10 @@ let stepIndex = 0;
 let learningSessionId = null;
 let authMode = 'register';
 let defaultOcrProvider = 'local-pix2tex';
+let currentInkMathLines = [];
+let currentInkLineGroups = [];
+let currentStudent = null;
+let selectedTopicKey = 'pythagoras';
 const sessionId = crypto.randomUUID();
 
 function resizeCanvas() {
@@ -203,16 +220,32 @@ function setAuthMode(mode) {
   hideAuthMessage();
 }
 
-function enterLearningSpace(student) {
-  studentSummary.textContent = `${student.fullName} · Grade ${student.grade} · ${student.curriculum.jurisdiction}`;
-  foundationName.textContent = student.curriculum.foundation;
-  foundationDescription.textContent = student.curriculum.explanation;
+function enterLearningHome(student) {
+  currentStudent = student;
+  homeStudentName.textContent = student.fullName;
+  homeGrade.textContent = student.grade;
+  homeSubtitle.textContent = `A concept map shaped around your Grade ${student.grade} mathematics practice.`;
   authScreen.classList.add('hidden');
+  learningApp.classList.add('hidden');
+  learningHome.classList.remove('hidden');
+  dashboardView.classList.remove('hidden');
+}
+
+function openTopicPractice(topicKey) {
+  if (!currentStudent) return;
+  selectedTopicKey = topicKey;
+  studentSummary.textContent = `${currentStudent.fullName} · Grade ${currentStudent.grade} · ${currentStudent.curriculum.jurisdiction}`;
+  foundationName.textContent = currentStudent.curriculum.foundation;
+  foundationDescription.textContent = currentStudent.curriculum.explanation;
+  learningHome.classList.add('hidden');
   learningApp.classList.remove('hidden');
   requestAnimationFrame(resizeCanvas);
   loadDefaultOcrProvider();
   startPractice();
 }
+
+function openPythagorasPractice() { openTopicPractice('pythagoras'); }
+function openAlgebraPractice() { openTopicPractice('algebraic_equations'); }
 
 authSwitch.addEventListener('click', () => setAuthMode(authMode === 'register' ? 'login' : 'register'));
 authForm.addEventListener('submit', async (event) => {
@@ -233,24 +266,41 @@ authForm.addEventListener('submit', async (event) => {
     const response = await fetch(`/auth/${authMode}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || 'We could not save your profile.');
-    enterLearningSpace(data);
+    enterLearningHome(data);
   } catch (error) { showAuthMessage(error.message); }
   finally { authSubmit.disabled = false; setAuthMode(authMode); }
 });
 
-logoutButton.addEventListener('click', async () => {
+async function signOut() {
   await fetch('/auth/logout', { method: 'POST' });
   learningSessionId = null;
+  currentStudent = null;
   learningApp.classList.add('hidden');
+  learningHome.classList.add('hidden');
   authScreen.classList.remove('hidden');
   authForm.reset();
   setAuthMode('login');
+}
+
+logoutButton.addEventListener('click', signOut);
+homeLogoutButton.addEventListener('click', signOut);
+backToTopicsButton.addEventListener('click', () => {
+  learningApp.classList.add('hidden');
+  learningHome.classList.remove('hidden');
+  dashboardView.classList.remove('hidden');
 });
+homePythagorasTopicButton.addEventListener('click', openPythagorasPractice);
+startPythagorasButton.addEventListener('click', openPythagorasPractice);
+homeAlgebraTopicButton.addEventListener('click', openAlgebraPractice);
+startAlgebraButton.addEventListener('click', openAlgebraPractice);
 
 async function startPractice() {
   newProblemButton.disabled = true;
   try {
-    const response = await fetch('/learning-sessions', { method: 'POST' });
+    const response = await fetch('/learning-sessions', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ topicKey: selectedTopicKey }),
+    });
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || 'A problem could not be created.');
     learningSessionId = data.sessionId;
@@ -258,6 +308,10 @@ async function startPractice() {
     problemPrompt.textContent = data.prompt;
     problemGoal.textContent = data.goal;
     foundationName.textContent = data.foundation;
+    practiceTopicLabel.textContent = `${data.topic} practice`;
+    foundationDescription.textContent = data.topic === 'Algebraic equations'
+      ? 'Use inverse operations to keep both sides of an equation balanced while solving for an unknown.'
+      : 'Use the theorem fluently and rearrange it to find an unknown side.';
     clearTutorGuidance();
     reviewFindings.replaceChildren();
     feedbackEmpty.classList.remove('hidden');
@@ -374,8 +428,11 @@ function fullWritingImageData() {
 }
 
 function clearInkMathTranscription() {
+  currentInkMathLines = [];
+  currentInkLineGroups = [];
   inkmathTranscript.classList.add('hidden');
   inkmathLines.replaceChildren();
+  recheckTranscriptionButton.classList.add('hidden');
 }
 
 function showInkMathTranscription(recognition) {
@@ -385,14 +442,23 @@ function showInkMathTranscription(recognition) {
   inkmathSummary.textContent = uncertainCount
     ? `It found ${recognition.lines.length} line${recognition.lines.length === 1 ? '' : 's'}; ${uncertainCount} needs a quick visual check.`
     : `It found ${recognition.lines.length} line${recognition.lines.length === 1 ? '' : 's'} in reading order and sent them to Math Coach.`;
-  inkmathLines.replaceChildren(...recognition.lines.map((line, index) => {
+  currentInkMathLines = recognition.lines.map((line) => ({ ...line }));
+  inkmathLines.replaceChildren(...currentInkMathLines.map((line, index) => {
     const card = document.createElement('div');
     card.className = `inkmath-line ${line.legibility}`;
     const heading = document.createElement('div');
     heading.className = 'inkmath-line-head';
     heading.textContent = `Line ${index + 1} · ${line.legibility === 'clear' ? 'read clearly' : 'please verify'}`;
-    const latex = document.createElement('code');
-    latex.textContent = line.latex || line.text || 'No mathematical expression detected';
+    const latex = document.createElement('input');
+    latex.type = 'text';
+    latex.value = line.latex || line.text || '';
+    latex.setAttribute('aria-label', `InkMath transcription for line ${index + 1}`);
+    latex.addEventListener('input', () => {
+      currentInkMathLines[index].latex = latex.value;
+      // A student-confirmed correction should be checked as deliberate input,
+      // rather than penalised for the original OCR confidence.
+      currentInkMathLines[index].legibility = 'clear';
+    });
     card.append(heading, latex);
     if (line.ambiguities?.length) {
       const warning = document.createElement('p');
@@ -403,6 +469,7 @@ function showInkMathTranscription(recognition) {
     return card;
   }));
   inkmathTranscript.classList.remove('hidden');
+  recheckTranscriptionButton.classList.remove('hidden');
 }
 
 async function recognizeFullWritingWithInkMath(imageData) {
@@ -482,13 +549,19 @@ function renderReviewFindings(data, lineResults) {
 
 function displaySolutionReview(data, recognizedLines = [], lineResults = []) {
   const issueCount = renderReviewFindings(data, lineResults);
+  const reviewedCurrentLines = lineResults.length > 0;
   feedbackEmpty.classList.add('hidden');
   feedbackResult.className = `feedback-result ${issueCount ? 'error' : 'correct'}`;
   resultLabel.textContent = data.complete ? 'Solution review' : 'Progress review';
-  resultTitle.textContent = issueCount ? `${issueCount} line${issueCount === 1 ? '' : 's'} to revisit` : 'Your solution is on track';
+  resultTitle.textContent = issueCount
+    ? `${issueCount} line${issueCount === 1 ? '' : 's'} to revisit`
+    : data.complete ? 'Your solution is complete' : 'Your solution is on track';
   resultHint.textContent = issueCount
     ? 'The numbered markers point to the lines that need attention. Start with the first one, then use the coach guidance below.'
-    : data.summary;
+    : data.complete ? data.summary
+    : reviewedCurrentLines
+      ? 'These lines are correct so far. Next, simplify the squares and then solve for c.'
+      : data.summary;
   foundationName.textContent = data.foundation;
   connectionLabel.textContent = data.complete ? 'Completed' : 'Solution reviewed';
 }
@@ -498,6 +571,23 @@ async function fetchAndDisplaySolutionReview(recognizedLines = [], lineResults =
   const data = await response.json();
   if (!response.ok) throw new Error(data.detail || 'The solution could not be reviewed.');
   displaySolutionReview(data, recognizedLines, lineResults);
+}
+
+async function evaluateInkMathLines(lines, lineGroups) {
+  const recognizedLines = [];
+  const lineResults = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    reviewButton.textContent = `Checking line ${index + 1} of ${lines.length}…`;
+    const line = lines[index];
+    const checkedLine = await submitRecognizedLatex(line.latex || line.text, line.legibility);
+    recognizedLines.push(checkedLine.recognizedLatex);
+    const matchingInkLine = lineGroups[Math.min(index, lineGroups.length - 1)];
+    lineResults.push({ ...checkedLine, lineNumber: index + 1, centerY: matchingInkLine.centerY });
+    applyTutorGuidance(checkedLine.tutor);
+    stepIndex = checkedLine.nextStep;
+  }
+  showErrorMarkers(lineResults);
+  await fetchAndDisplaySolutionReview(recognizedLines, lineResults);
 }
 
 reviewButton.addEventListener('click', async () => {
@@ -511,17 +601,10 @@ reviewButton.addEventListener('click', async () => {
     const lineResults = [];
     if (defaultOcrProvider === 'inkmath') {
       const recognition = await recognizeFullWritingWithInkMath(fullWritingImageData());
+      currentInkLineGroups = handwrittenLines;
       showInkMathTranscription(recognition);
-      for (let index = 0; index < recognition.lines.length; index += 1) {
-        reviewButton.textContent = `Checking line ${index + 1} of ${recognition.lines.length}…`;
-        const line = recognition.lines[index];
-        const checkedLine = await submitRecognizedLatex(line.latex, line.legibility);
-        recognizedLines.push(checkedLine.recognizedLatex);
-        const matchingInkLine = handwrittenLines[Math.min(index, handwrittenLines.length - 1)];
-        lineResults.push({ ...checkedLine, lineNumber: index + 1, centerY: matchingInkLine.centerY });
-        applyTutorGuidance(checkedLine.tutor);
-        stepIndex = checkedLine.nextStep;
-      }
+      await evaluateInkMathLines(currentInkMathLines, currentInkLineGroups);
+      return;
     } else {
       clearInkMathTranscription();
       for (let index = 0; index < handwrittenLines.length; index += 1) {
@@ -539,6 +622,21 @@ reviewButton.addEventListener('click', async () => {
   finally { reviewButton.disabled = false; reviewButton.textContent = 'Review full solution'; }
 });
 
+recheckTranscriptionButton.addEventListener('click', async () => {
+  if (!learningSessionId || !currentInkMathLines.length) return;
+  hideOcrMessage();
+  recheckTranscriptionButton.disabled = true;
+  reviewButton.disabled = true;
+  try {
+    await evaluateInkMathLines(currentInkMathLines, currentInkLineGroups);
+  } catch (error) { showOcrMessage(error.message); }
+  finally {
+    recheckTranscriptionButton.disabled = false;
+    reviewButton.disabled = false;
+    reviewButton.textContent = 'Review full solution';
+  }
+});
+
 foundationLink.addEventListener('click', () => foundationModal.showModal());
 closeFoundation.addEventListener('click', () => foundationModal.close());
 foundationModal.addEventListener('click', (event) => { if (event.target === foundationModal) foundationModal.close(); });
@@ -546,7 +644,7 @@ foundationModal.addEventListener('click', (event) => { if (event.target === foun
 async function restoreLogin() {
   try {
     const response = await fetch('/me');
-    if (response.ok) enterLearningSpace(await response.json());
+    if (response.ok) enterLearningHome(await response.json());
     else setAuthMode('register');
   } catch (_) { setAuthMode('register'); }
 }
