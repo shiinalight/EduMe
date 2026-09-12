@@ -22,6 +22,8 @@ from pydantic import BaseModel, Field
 from sympy import Eq, Expr, Symbol, simplify
 from sympy.parsing.latex import parse_latex
 
+from heygen_video import create_video_router
+
 
 a, b, c, x = Symbol("a"), Symbol("b"), Symbol("c"), Symbol("x")
 DATABASE_PATH = Path(os.environ.get("MATH_TUTOR_DB", Path(__file__).parent / "student_data.db"))
@@ -652,6 +654,7 @@ def record_strategy_outcome(student_id: int, mode: TutorMode, accepted: bool) ->
 
 initialize_database()
 app = FastAPI(title="Math Step Detection Service")
+app.include_router(create_video_router(authenticated_student, database_connection))
 STATIC_DIR = Path(__file__).parent / "static"
 
 
