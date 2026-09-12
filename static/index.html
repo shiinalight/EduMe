@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Math Notes</title>
+    <link rel="stylesheet" href="/app/styles.css" />
+  </head>
+  <body>
+    <section id="auth-screen" class="auth-shell">
+      <form id="auth-form" class="auth-card">
+        <p class="eyebrow">Your personal math space</p>
+        <h1 id="auth-title">Create your learner profile</h1>
+        <p id="auth-description">This helps tailor foundations and practice to where you are learning.</p>
+        <label>Student name<input id="full-name" required minlength="2" maxlength="80" autocomplete="name" /></label>
+        <label>Email<input id="email" required type="email" autocomplete="email" /></label>
+        <label>Password<input id="password" required type="password" minlength="8" autocomplete="new-password" /></label>
+        <div id="profile-fields" class="profile-fields">
+          <label>Grade<input id="grade" required type="number" min="1" max="12" inputmode="numeric" /></label>
+          <label>Country<input id="country" required autocomplete="country-name" placeholder="e.g. United States" /></label>
+          <label>State / region<input id="state" required autocomplete="address-level1" placeholder="e.g. California" /></label>
+          <fieldset class="tutor-preference">
+            <legend>Helpful teaching approaches <span>(choose one or more)</span></legend>
+            <label><input name="tutor-mode" value="guided" type="checkbox" checked /> Guided steps</label>
+            <label><input name="tutor-mode" value="socratic" type="checkbox" /> Questions that prompt thinking</label>
+            <label><input name="tutor-mode" value="worked_example" type="checkbox" /> Parallel worked examples</label>
+            <label><input name="tutor-mode" value="visual" type="checkbox" /> Visual diagrams</label>
+          </fieldset>
+        </div>
+        <p id="auth-message" class="auth-message hidden"></p>
+        <button id="auth-submit" class="check-button" type="submit">Create profile <span>→</span></button>
+        <button id="auth-switch" class="text-button" type="button">I already have an account</button>
+      </form>
+    </section>
+
+    <main id="learning-app" class="app-shell hidden">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Pythagoras practice</p>
+          <h1>Work it out</h1>
+        </div>
+        <div class="student-menu">
+          <div class="session-status"><span class="status-dot"></span><span id="connection-label">Ready</span></div>
+          <span id="student-summary" class="student-summary"></span>
+          <button id="logout-button" class="text-button" type="button">Sign out</button>
+        </div>
+      </header>
+
+      <section class="workspace" aria-label="Math notebook">
+        <article class="notebook-card">
+          <div class="problem-strip">
+            <span class="problem-number">01</span>
+            <div class="problem-copy"><p class="problem-label">Today’s problem</p><p id="problem-prompt">Choose a practice problem to begin.</p><p id="problem-goal" class="problem-goal"></p></div>
+            <button id="new-problem-button" class="problem-action" type="button" aria-label="Get another problem" title="Another problem">↻</button>
+          </div>
+
+          <section id="visual-board" class="visual-board hidden" aria-label="Pythagoras visual support">
+            <div><p class="eyebrow">Look at the triangle</p><p id="visual-cue">The visual cue will appear here when it can help.</p></div>
+            <svg viewBox="0 0 220 130" role="img" aria-label="Right triangle labelled a, b and c">
+              <path d="M25 105 L25 28 L185 105 Z" fill="#eef0ff" stroke="#6366f1" stroke-width="3" />
+              <path d="M25 88 L42 88 L42 105" fill="none" stroke="#6366f1" stroke-width="3" />
+              <text x="10" y="70" fill="#4548c8" font-size="18" font-weight="700">b</text>
+              <text x="99" y="123" fill="#4548c8" font-size="18" font-weight="700">a</text>
+              <text x="112" y="58" fill="#4548c8" font-size="18" font-weight="700">c</text>
+            </svg>
+          </section>
+
+          <div class="notebook-heading">
+            <div>
+              <h2>Your working</h2>
+              <p>Write with Apple Pencil or your finger.</p>
+            </div>
+            <div class="tool-buttons" aria-label="Drawing tools">
+              <button id="undo-button" class="icon-button" type="button" aria-label="Undo last stroke" title="Undo">↶</button>
+              <button id="clear-button" class="icon-button" type="button" aria-label="Clear writing" title="Clear">⌫</button>
+            </div>
+          </div>
+
+          <div class="canvas-wrap">
+            <canvas id="writing-pad" aria-label="Handwriting canvas"></canvas>
+            <p id="canvas-placeholder">Write an equation here</p>
+            <div id="error-markers" class="error-markers" aria-hidden="true"></div>
+          </div>
+
+          <div class="recognition-panel">
+            <div class="recognition-heading">
+              <div>
+                <p class="eyebrow">Current step</p>
+                <p class="caption">Enter the equation for the line you want feedback on.</p>
+              </div>
+            </div>
+            <label class="sr-only" for="latex-input">Equation for current step</label>
+            <textarea id="latex-input" rows="2" spellcheck="false" placeholder="Example: a^2 + b^2 = c^2"></textarea>
+            <div class="sample-row" aria-label="Sample equations">
+              <span>Try a sample:</span>
+              <button type="button" class="sample-button" data-latex="a^2 + b^2 = c^2">Correct</button>
+              <button type="button" class="sample-button" data-latex="a + b^2 = c^2">Missing square</button>
+              <button type="button" class="sample-button" data-latex="a^2 - b^2 = c^2">Sign error</button>
+            </div>
+          </div>
+
+          <div class="solution-actions">
+            <button id="check-button" class="check-button" type="button">Check this step <span>→</span></button>
+            <button id="review-button" class="review-button" type="button">Review full solution</button>
+          </div>
+        </article>
+
+        <aside class="coach-card" aria-live="polite">
+          <div class="coach-heading"><span class="coach-mark">✦</span><span>Math coach</span></div>
+          <section id="tutor-guidance" class="tutor-guidance hidden">
+            <p id="tutor-mode" class="tutor-mode">Guided</p>
+            <p id="tutor-prompt">We’ll take one small step at a time.</p>
+          </section>
+          <section id="worked-example" class="worked-example hidden">
+            <p class="eyebrow">Worked example</p>
+            <strong id="worked-title"></strong>
+            <ol id="worked-steps"></ol>
+            <p id="worked-handoff"></p>
+          </section>
+          <div id="feedback-empty" class="feedback-empty">
+            <h2>Let’s check your thinking</h2>
+            <p>After each line, you’ll get a small hint connected to the idea you are using—not just an answer.</p>
+          </div>
+          <div id="feedback-result" class="feedback-result hidden">
+            <p id="result-label" class="result-label"></p>
+            <h2 id="result-title"></h2>
+            <p id="result-hint"></p>
+            <div id="review-findings" class="review-findings"></div>
+            <div class="concept-card">
+              <p class="eyebrow">Foundation</p>
+              <strong id="foundation-name">Pythagoras’ theorem</strong>
+              <p id="foundation-description">For a right triangle: <i>a</i>² + <i>b</i>² = <i>c</i>², where <i>c</i> is the hypotenuse.</p>
+              <button id="foundation-link" class="foundation-link" type="button">See how it works →</button>
+            </div>
+          </div>
+          <p id="ocr-message" class="ocr-message hidden"></p>
+        </aside>
+      </section>
+    </main>
+    <dialog id="foundation-modal" class="foundation-modal">
+      <button id="close-foundation" class="icon-button modal-close" type="button" aria-label="Close foundation lesson">×</button>
+      <p class="eyebrow">Foundation lesson</p>
+      <h2>Pythagoras’ theorem</h2>
+      <p>In a right triangle, the hypotenuse is the side opposite the right angle. The area of the square on that side equals the combined areas of the squares on the two shorter sides.</p>
+      <div class="formula-panel"><i>a</i>² + <i>b</i>² = <i>c</i>²</div>
+      <ol>
+        <li>Identify the hypotenuse as <i>c</i>.</li>
+        <li>Square each side length.</li>
+        <li>Add the two shorter-side squares, then solve for <i>c</i>.</li>
+      </ol>
+      <p class="modal-note">For a 3–4–5 triangle: 3² + 4² = 9 + 16 = 25, so <i>c</i> = 5.</p>
+    </dialog>
+    <script src="/app/app.js"></script>
+  </body>
+</html>

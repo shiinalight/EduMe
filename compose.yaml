@@ -1,0 +1,5 @@
+services:
+  ocr:
+    image: lukasblecher/pix2tex:api
+    ports:
+      - "8502:8502"

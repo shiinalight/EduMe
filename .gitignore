@@ -1,0 +1,6 @@
+.venv/
+.env
+student_data.db
+.pytest_cache/
+__pycache__/
+*.py[cod]
