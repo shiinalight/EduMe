@@ -4,7 +4,7 @@ import { onStudentStep } from './tutor-bridge.js';
 import { uuid } from './ids.js';
 
 const $ = id => document.getElementById(id);
-const state = { sessionId: uuid(), configured: false, worksheet: null, questionId: null, work: new Map(), image: null, revision: 0, busy: false, extractionBusy: false, recognition: null, recognitionSnapshot: null, fixture: false, questionEditing: null };
+const state = { sessionId: uuid(), configured: false, worksheet: null, questionId: null, work: new Map(), image: null, revision: 0, busy: false, extractionBusy: false, recognition: null, recognitionSnapshot: null, fixture: false, questionEditing: null, pendingImport: null };
 function newWork() { return { strokes: [], attempts: [], fixture: false }; }
 function currentQuestion() { return state.worksheet?.questions.find(q => q.id === state.questionId); }
 function currentWork() { return state.work.get(state.questionId); }
@@ -30,7 +30,7 @@ function refreshInk() {
   $('recognize').disabled = busy || !has || !question;
   $('sample-ink').disabled = busy || !question;
   $('type-math').disabled = busy || !question;
-  for (const id of ['upload', 'camera-button', 'sample-sheet', 'manual-question', 'edit-question', 'pen', 'eraser']) $(id).disabled = busy;
+  for (const id of ['upload', 'camera-button', 'sample-sheet', 'manual-question', 'edit-question', 'pen', 'eraser', 'import-link', 'extract']) $(id).disabled = busy;
   updateConfirm();
   $('ink-status').textContent = state.fixture ? 'Example ink · fixed sample' : has ? `${ink.strokes.length} pen stroke${ink.strokes.length === 1 ? '' : 's'} · not yet submitted` : 'No ink yet';
 }
@@ -53,7 +53,12 @@ function selectQuestion(id) {
   renderQuestion(); showQuestions(); showSteps(); refreshInk(); refreshPayload();
 }
 function renderQuestion() {
-  const q = currentQuestion(); $('question-heading').textContent = q.label || 'Selected question'; $('question-text').textContent = q.text;
+  const q = currentQuestion();
+  if (!q) {
+    $('question-heading').textContent = 'Add a question'; $('question-text').textContent = 'Lesson imported. Add a question manually to start practicing.';
+    $('question-source').textContent = 'Lesson context'; $('question-latex').hidden = true;
+    $('question-warning').hidden = true; $('edit-question').hidden = true; return;
+  } $('question-heading').textContent = q.label || 'Selected question'; $('question-text').textContent = q.text;
   $('question-latex').textContent = q.latex; $('question-latex').hidden = !q.latex;
   $('question-source').textContent = state.worksheet.source === 'example' ? 'Example worksheet' : q.reviewed ? 'Reviewed' : 'Review needed';
   const warnings = [...(state.worksheet.warnings || []), ...(q.ambiguities || []), ...(q.diagram_description ? [`Diagram: ${q.diagram_description}`] : [])];
@@ -63,7 +68,11 @@ function renderQuestion() {
 function acceptWorksheet(worksheet) {
   // Keep prior work in memory but only the active worksheet is exported.
   state.worksheet = { ...worksheet, id: uuid() }; state.questionId = null;
-  selectQuestion(worksheet.questions[0].id);
+  state.work.clear();
+  $('web-source').hidden = !worksheet.source_url;
+  if (worksheet.source_url) { $('web-title').textContent = worksheet.title; $('web-url').href = worksheet.source_url; $('web-context').textContent = worksheet.lesson_context || 'No additional lesson context extracted.'; }
+  if (worksheet.questions.length) selectQuestion(worksheet.questions[0].id);
+  else { ink.set([]); state.fixture = false; invalidateReading(); renderQuestion(); showQuestions(); showSteps(); refreshInk(); refreshPayload(); }
 }
 $('sample-sheet').addEventListener('click', () => {
   if (state.busy || state.extractionBusy || !mayReplaceSheet()) return;
@@ -99,12 +108,55 @@ $('camera-button').addEventListener('click', () => $('camera').click());
 $('dropzone').addEventListener('dragover', e => { e.preventDefault(); $('dropzone').classList.add('drag'); });
 $('dropzone').addEventListener('dragleave', () => $('dropzone').classList.remove('drag'));
 $('dropzone').addEventListener('drop', e => { e.preventDefault(); $('dropzone').classList.remove('drag'); uploadFile(e.dataTransfer.files[0]); });
-async function post(path, body) {
+async function post(path, body, timeout = 55000) {
   let response;
-  try { response = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(55000) }); }
+  try { response = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(timeout) }); }
   catch { throw new Error('Could not complete the request. Check that the local server is running, then retry.'); }
   const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Recognition failed.'); return data;
 }
+// Preview results before replacing the active worksheet. Page text is never rendered as HTML.
+$('import-link').addEventListener('click', () => { if (!state.busy && !state.extractionBusy) $('link-dialog').showModal(); });
+$('lesson-url').addEventListener('input', () => { state.pendingImport = null; $('link-preview').hidden = true; $('link-status').textContent = ''; });
+function updateImportButton() {
+  const imported = state.pendingImport;
+  $('use-link').disabled = !imported || (imported.questions.length > 0 && !$('link-questions').querySelector('input:checked'));
+  $('use-link').textContent = imported?.questions.length ? 'Use selected questions' : 'Use lesson & add a question';
+}
+$('link-form').addEventListener('submit', async e => {
+  e.preventDefault(); if (state.busy || state.extractionBusy) return;
+  state.extractionBusy = true; state.pendingImport = null; $('link-preview').hidden = true;
+  $('fetch-link').disabled = true; $('lesson-url').disabled = true; $('fetch-link').textContent = 'Reading page…';
+  $('link-status').textContent = 'Reading this page and extracting its exercises. This can take about a minute.'; refreshInk();
+  try {
+    const result = await post('/api/import-url', { url: $('lesson-url').value.trim() }, 85000);
+    state.pendingImport = result; $('link-title').textContent = result.title;
+    $('link-context').textContent = result.lesson_context; $('link-warnings').textContent = result.warnings.join(' ');
+    $('link-questions').replaceChildren();
+    for (const q of result.questions) {
+      const label = document.createElement('label'); label.className = 'import-question';
+      const check = document.createElement('input'); check.type = 'checkbox'; check.checked = true; check.value = q.id;
+      check.addEventListener('change', updateImportButton);
+      const content = document.createElement('span'); const title = document.createElement('strong'); title.textContent = q.label || 'Exercise';
+      const text = document.createElement('p'); text.textContent = q.text;
+      const math = document.createElement('pre'); math.textContent = q.latex;
+      content.append(title, text, math); label.append(check, content); $('link-questions').append(label);
+    }
+    $('link-status').textContent = result.questions.length ? `Found ${result.questions.length} exercise(s). Choose which to import.` : 'Lesson found, but no existing exercises. You can add your own question.';
+    $('link-preview').hidden = false; updateImportButton();
+  } catch (error) { $('link-status').textContent = error.message; }
+  finally { state.extractionBusy = false; $('fetch-link').disabled = false; $('lesson-url').disabled = false; $('fetch-link').textContent = 'Read page'; refreshInk(); }
+});
+$('use-link').addEventListener('click', () => {
+  if (!state.pendingImport || state.busy || state.extractionBusy || !mayReplaceSheet()) return;
+  const chosen = new Set([...$('link-questions').querySelectorAll('input:checked')].map(input => input.value));
+  const original = state.pendingImport;
+  if (original.questions.length && !chosen.size) return;
+  acceptWorksheet({ ...original, questions: original.questions.filter(q => chosen.has(q.id)) });
+  state.image = null; $('photo-wrap').hidden = true; $('extract').hidden = true;
+  $('link-dialog').close(); state.pendingImport = null; $('link-preview').hidden = true; $('link-status').textContent = '';
+  note('Web lesson imported. Review the questions against the original page, then write or type your next step.');
+  if (!state.worksheet.questions.length) openQuestionEditor(true);
+});
 $('extract').addEventListener('click', async () => {
   if (!state.image || state.extractionBusy || state.busy || !mayReplaceSheet()) return;
   state.extractionBusy = true; $('extract').disabled = true; $('extract').textContent = 'Reading worksheet…'; refreshInk();
@@ -123,7 +175,7 @@ $('question-form').addEventListener('submit', e => {
   e.preventDefault(); const text = $('question-input').value.trim(); if (!text) return;
   if (!state.worksheet) state.worksheet = { id: uuid(), title: 'My practice', source: 'manual', language: 'und', warnings: [], questions: [] };
   const existing = state.worksheet.questions.find(q => q.id === state.questionEditing);
-  const q = existing || { id: uuid(), label: `Question ${state.worksheet.questions.length + 1}`, ambiguities: [], diagram_description: '' };
+  const q = existing || { id: uuid(), origin: 'manual', label: `Question ${state.worksheet.questions.length + 1}`, ambiguities: [], diagram_description: '' };
   if (existing && currentWork()?.attempts.length && (q.text !== text || q.latex !== $('question-math-input').value.trim()) && !confirm('You are editing a question with saved steps. The export will use this revised question. Continue?')) return;
   Object.assign(q, { text, latex: $('question-math-input').value.trim(), reviewed: true }); if (!existing) state.worksheet.questions.push(q);
   $('question-dialog').close();
@@ -181,7 +233,7 @@ $('type-math').addEventListener('click', () => {
 $('confirm-step').addEventListener('click', async () => {
   if (state.busy || state.extractionBusy || !state.recognition || !$('review-check').checked || !currentQuestion()) return;
   if (state.recognitionSnapshot.revision !== state.revision || state.recognitionSnapshot.questionId !== state.questionId) return note('The ink changed. Please recognize it again before confirming.', true);
-  if (!currentQuestion().reviewed) return note('First review / edit the question against the source photo and save it. Your transcription is still here.', true);
+  if (!currentQuestion().reviewed) return note('First review / edit the question against the source photo or original webpage and save it. Your transcription is still here.', true);
   const lines = editedLines(); if (lines.some(l => !l.text && !l.latex)) return;
   const snapshot = state.recognitionSnapshot;
   currentWork().attempts.push({ id: uuid(), captured_at: snapshot.captured_at, confirmed_at: new Date().toISOString(), input_source: snapshot.input_source, recognition: structuredClone(state.recognition), lines, ink: snapshot.ink });
@@ -209,7 +261,7 @@ $('export').addEventListener('click', () => {
 $('setup-button').addEventListener('click', () => $('setup-dialog').showModal());
 document.querySelectorAll('.close-dialog').forEach(button => button.addEventListener('click', () => button.closest('dialog').close()));
 window.addEventListener('beforeunload', e => { if ([...state.work.values()].some(w => w.attempts.length || w.strokes.length)) { e.preventDefault(); e.returnValue = ''; } });
-try { const response = await fetch('/api/status'); if (!response.ok) throw new Error(); const status = await response.json(); state.configured = status.configured; $('connection').textContent = status.configured ? 'Live recognition ready' : 'No API key · example available'; $('connection').classList.toggle('live', status.configured); }
+try { const response = await fetch('/api/status'); if (!response.ok) throw new Error(); const status = await response.json(); state.configured = status.configured; $('link-connection').textContent = status.firecrawl_configured ? 'Firecrawl · link import ready' : 'Link import: add a Firecrawl API key in Setup'; $('connection').textContent = status.configured ? 'Live recognition ready' : 'Gemini not configured · manual input ready'; $('connection').classList.toggle('live', status.configured); }
 catch { $('connection').textContent = 'Server unavailable'; note('Run npm start and open the localhost URL. Opening index.html directly will not connect the recognizer.', true); }
 refreshInk();
 

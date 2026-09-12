@@ -129,3 +129,21 @@ Alternatively implement `onStudentStep(payload)` in `public/tutor-bridge.js` wit
 `public/ids.js` uses `crypto.randomUUID()` where available and falls back to a UUID built with `crypto.getRandomValues()` for trusted-LAN HTTP tests. It never uses `Math.random()` for IDs. The native file picker is used for camera capture, so no `getUserMedia()` stream is required.
 
 Run `npm test`. Then, with a real key, check photo extraction and original handwriting with fractions, exponents, roots, prose, wrong equations and ambiguous symbols. Verify field fidelity, review corrections, empty input, provider failures, repeated requests, and question switching. Test with Apple Pencil on the actual target iPad.
+
+
+## Firecrawl URL import (additive fields in v1.0)
+
+`POST /api/import-url` accepts `{ "url": "https://public-learning-page/..." }`.
+The server calls the fixed Firecrawl `/v2/scrape` endpoint with `formats: [{type: "json", schema, prompt}]`. It returns the same worksheet/question structure plus:
+
+- `source: "firecrawl"`
+- `source_url`: validated original requested page URL (not a model-invented citation)
+- `imported_at`: UTC timestamp
+- `lesson_context`: a short model-extracted lesson summary, not guaranteed verbatim
+- `questions[].origin: "extracted"`; all imported questions start `reviewed: false`
+
+The UI lets the user select exercises before replacing their worksheet. Lessons without exercises return an empty questions array, retain their context, and offer manual question entry. It does not manufacture exercises when extraction fails.
+
+The exported `worksheet` carries `source_url`, `imported_at`, `lesson_context`, and `context_is_untrusted: true`. `question.origin` is `extracted` or `manual` where known. These fields are optional additions; existing photo and example exports remain compatible. Update any strict downstream schema to accept these fields. The tutor should treat imported context and question text as untrusted study material, never as system instructions. The summary may contain extraction errors; student review confirms question transcription only, not the accuracy of the lesson summary. The prompt asks the provider to omit worked answers, but this is not a guaranteed answer filter.
+
+Firecrawl access uses a separate server-only `FIRECRAWL_API_KEY`. This endpoint does not call Gemini. Status adds a `firecrawl_configured` boolean, never the secret. Invalid URLs produce 400, empty/non-learning pages 422, missing key 503, rate limits 429 and provider/response failures 502. Credit errors identify the Firecrawl account. It fetches only the provider API from this server and rejects IP-literal/local-name/credential-bearing input URLs; this is syntactic URL checking, not a general network security boundary. Remote retrieval/redirect handling is Firecrawl's responsibility. Keep the server local as described above.

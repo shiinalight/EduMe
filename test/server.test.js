@@ -5,8 +5,8 @@ import http from 'node:http';
 import { createApp } from '../server/index.js';
 
 test('HTTP routes, request guards, and static serving', async t => {
-  const calls = [];
-  const server = createApp({ recognizer: async (kind, body) => { calls.push({ kind, body }); return { ok: true }; } });
+  const calls = []; const importCalls = [];
+  const server = createApp({ pageImporter: async body => { importCalls.push(body); return { source: 'firecrawl', questions: [] }; }, recognizer: async (kind, body) => { calls.push({ kind, body }); return { ok: true }; } });
   server.listen(0, '127.0.0.1'); await once(server, 'listening'); t.after(() => { server.closeAllConnections(); server.close(); });
   const base = `http://127.0.0.1:${server.address().port}`;
   const home = await fetch(base); assert.equal(home.status, 200); assert.match(await home.text(), /InkMath/); assert.match(home.headers.get('content-security-policy'), /frame-ancestors 'none'/);
@@ -22,4 +22,9 @@ test('HTTP routes, request guards, and static serving', async t => {
     const result = await fetch(`${base}/api/${endpoint}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: 'test-image' }) }); assert.equal(result.status, 200);
   }
   assert.deepEqual(calls.map(c => c.kind), ['handwriting', 'worksheet']);
+  const imported = await fetch(base + '/api/import-url', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: 'https://www.mathsisfun.com' }) });
+  assert.equal(imported.status, 200); assert.equal((await imported.json()).source, 'firecrawl');
+  assert.deepEqual(importCalls, [{ url: 'https://www.mathsisfun.com' }]);
+  assert.equal((await fetch(base + '/api/import-url', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://evil.example' }, body: '{}' })).status, 403);
+  assert.equal(typeof status.firecrawl_configured, 'boolean');
 });

@@ -17,6 +17,30 @@ npm start
 
 Without an API key, use **Try example → Load example ink → Read my handwriting → review → Confirm & add step → Export tutor JSON**. Only the unchanged sample ink has a fixed, explicitly labeled transcription. Any pen/eraser edit invalidates this fixture and requires real recognition. **Type math instead** works without any API.
 
+## Import a lesson or exercises from a URL (Firecrawl)
+
+1. Sign in to your Firecrawl account. Redeem the organizers' event code using their redemption instructions; the code itself is **not an API key**.
+2. Copy your API key from the Firecrawl dashboard and add this line to `.env`:
+
+   ```env
+   FIRECRAWL_API_KEY=your_firecrawl_api_key
+   ```
+
+3. Restart `npm start`. The sidebar should say **Firecrawl · link import ready**.
+4. Click **Import from link**, paste a public lesson/exercise URL, and click **Read page**.
+5. Preview the extracted content and select the questions you want. Click **Use selected questions**.
+6. Review/edit each question against the original page, then draw with a mouse/stylus or choose **Type math instead**. Export the selected question and confirmed steps as before.
+
+**URL import requires only the Firecrawl key.** Gemini is still required to recognize arbitrary handwriting and worksheet photos. Mouse drawing, manual typing, review, and JSON export do not require Gemini.
+
+Firecrawl's JSON extraction reads a single supplied page and extracts at most 12 existing exercise prompts. It does not crawl the entire website, generate replacement questions, grade work, or provide hints. A lesson or syllabus without exercises is imported as context; **Use lesson & add a question** opens the manual question editor. A page with no learning content reports an error and preserves your current worksheet. Mathematical formatting and missing diagrams must be checked against the source; not every website is supported.
+
+The source URL, import timestamp, lesson context, and question origin survive the tutor JSON export. The page is sent to Firecrawl only when you click **Read page**; no Firecrawl key is exposed to the browser. This prototype intentionally requires a configured key to use your assigned account credits. Missing/invalid keys, unavailable credits, rate limits, timeout, empty extraction and malformed results are reported explicitly; errors never become fake sample content. Requests have no automatic retry that might consume extra credits.
+
+API documentation: https://docs.firecrawl.dev/api-reference/endpoint/scrape and https://docs.firecrawl.dev/features/llm-extract
+
+Validation for this update: 18 automated tests pass, including Firecrawl requests with mocked responses, source-preserving exports, lesson-only handling, URL validation, error handling and existing mouse gestures. **No live Firecrawl account/key test was performed.** The remote test browser blocks localhost, so the new interface still needs a local browser check.
+
 ## Enable real handwriting and photo recognition
 
 Copy `.env.example` to `.env` using VS Code's file explorer, then fill in:
