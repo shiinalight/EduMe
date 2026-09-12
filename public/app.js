@@ -2,6 +2,7 @@ import { InkCanvas, exampleInk } from './ink.js';
 import { buildTutorPayload } from './contract.js';
 import { onStudentStep } from './tutor-bridge.js';
 import { uuid } from './ids.js';
+import { setupVoice } from './voice.js';
 
 const $ = id => document.getElementById(id);
 const state = { sessionId: uuid(), configured: false, worksheet: null, questionId: null, work: new Map(), image: null, revision: 0, busy: false, extractionBusy: false, recognition: null, recognitionSnapshot: null, fixture: false, questionEditing: null, pendingImport: null };
@@ -30,7 +31,7 @@ function refreshInk() {
   $('recognize').disabled = busy || !has || !question;
   $('sample-ink').disabled = busy || !question;
   $('type-math').disabled = busy || !question;
-  for (const id of ['upload', 'camera-button', 'sample-sheet', 'manual-question', 'edit-question', 'pen', 'eraser', 'import-link', 'extract']) $(id).disabled = busy;
+  for (const id of ['upload', 'camera-button', 'sample-sheet', 'manual-question', 'edit-question', 'pen', 'eraser', 'import-link', 'speak-problem', 'extract']) $(id).disabled = busy;
   updateConfirm();
   $('ink-status').textContent = state.fixture ? 'Example ink · fixed sample' : has ? `${ink.strokes.length} pen stroke${ink.strokes.length === 1 ? '' : 's'} · not yet submitted` : 'No ink yet';
 }
@@ -114,6 +115,13 @@ async function post(path, body, timeout = 55000) {
   catch { throw new Error('Could not complete the request. Check that the local server is running, then retry.'); }
   const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Recognition failed.'); return data;
 }
+setupVoice({ post, canOpen: () => !state.busy && !state.extractionBusy, onImport: result => {
+  const voice = { transcript: result.transcript, original_transcript: result.original_transcript, transcription_provider: result.transcription_provider, transcription_model: result.transcription_model, math_model: result.model, created_at: result.created_at, context_is_untrusted: true };
+  const questions = result.questions.map(q => ({ ...q, voice: structuredClone(voice) }));
+  if (!state.worksheet) acceptWorksheet({ ...result, questions });
+  else { state.worksheet.questions.push(...questions); state.worksheet.warnings = [...new Set([...(state.worksheet.warnings || []), ...result.warnings])]; selectQuestion(questions[0].id); }
+  note('Reviewed voice formulas added as questions. Existing questions and work are preserved. Export tutor JSON or write your next step.');
+} });
 // Preview results before replacing the active worksheet. Page text is never rendered as HTML.
 $('import-link').addEventListener('click', () => { if (!state.busy && !state.extractionBusy) $('link-dialog').showModal(); });
 $('lesson-url').addEventListener('input', () => { state.pendingImport = null; $('link-preview').hidden = true; $('link-status').textContent = ''; });
@@ -261,7 +269,7 @@ $('export').addEventListener('click', () => {
 $('setup-button').addEventListener('click', () => $('setup-dialog').showModal());
 document.querySelectorAll('.close-dialog').forEach(button => button.addEventListener('click', () => button.closest('dialog').close()));
 window.addEventListener('beforeunload', e => { if ([...state.work.values()].some(w => w.attempts.length || w.strokes.length)) { e.preventDefault(); e.returnValue = ''; } });
-try { const response = await fetch('/api/status'); if (!response.ok) throw new Error(); const status = await response.json(); state.configured = status.configured; $('link-connection').textContent = status.firecrawl_configured ? 'Firecrawl · link import ready' : 'Link import: add a Firecrawl API key in Setup'; $('connection').textContent = status.configured ? 'Live recognition ready' : 'Gemini not configured · manual input ready'; $('connection').classList.toggle('live', status.configured); }
+try { const response = await fetch('/api/status'); if (!response.ok) throw new Error(); const status = await response.json(); state.configured = status.configured; $('voice-connection').textContent = status.elevenlabs_configured && status.configured ? 'ElevenLabs + Gemini · voice ready' : !status.elevenlabs_configured ? 'Voice: add ELEVENLABS_API_KEY in Setup' : 'Voice math: add GEMINI_API_KEY in Setup'; $('link-connection').textContent = status.firecrawl_configured ? 'Firecrawl · link import ready' : 'Link import: add a Firecrawl API key in Setup'; $('connection').textContent = status.configured ? 'Live recognition ready' : 'Gemini not configured · manual input ready'; $('connection').classList.toggle('live', status.configured); }
 catch { $('connection').textContent = 'Server unavailable'; note('Run npm start and open the localhost URL. Opening index.html directly will not connect the recognizer.', true); }
 refreshInk();
 

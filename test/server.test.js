@@ -28,3 +28,23 @@ test('HTTP routes, request guards, and static serving', async t => {
   assert.equal((await fetch(base + '/api/import-url', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://evil.example' }, body: '{}' })).status, 403);
   assert.equal(typeof status.firecrawl_configured, 'boolean');
 });
+
+test('voice routes share origin, content type, JSON guards and expose only key presence', async t => {
+  const calls = [];
+  const server = createApp({ transcriber: async body => { calls.push(body); return { text: 'x squared' }; }, mathParser: async body => { calls.push(body); return { questions: [] }; } });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening'); t.after(() => { server.closeAllConnections(); server.close(); });
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const status = await (await fetch(base + '/api/status')).json(); assert.equal(typeof status.elevenlabs_configured, 'boolean');
+  for (const [endpoint, body] of [['transcribe-audio', { audio: 'test-audio' }], ['voice-math', { transcript: 'x squared' }]]) {
+    const url = `${base}/api/${endpoint}`;
+    assert.equal((await fetch(url)).status, 405);
+    assert.equal((await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://evil.example' }, body: '{}' })).status, 403);
+    assert.equal((await fetch(url, { method: 'POST', body: '{}' })).status, 415);
+    assert.equal((await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: 'null' })).status, 400);
+    assert.equal((await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })).status, 200);
+  }
+  assert.deepEqual(calls, [{ audio: 'test-audio' }, { transcript: 'x squared' }]);
+  const ui = await (await fetch(base)).text(); assert.match(ui, /id="voice-dialog"/);
+  assert.match((await fetch(base)).headers.get('content-security-policy'), /media-src 'self' blob:/);
+  assert.equal((await fetch(base + '/voice.js')).status, 200);
+});

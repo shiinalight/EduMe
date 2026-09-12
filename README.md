@@ -41,6 +41,22 @@ API documentation: https://docs.firecrawl.dev/api-reference/endpoint/scrape and 
 
 Validation for this update: 18 automated tests pass, including Firecrawl requests with mocked responses, source-preserving exports, lesson-only handling, URL validation, error handling and existing mouse gestures. **No live Firecrawl account/key test was performed.** The remote test browser blocks localhost, so the new interface still needs a local browser check.
 
+## Voice → text → math JSON
+
+Add `ELEVENLABS_API_KEY` to your **existing** local `.env`, save (⌘S on macOS), and restart the server. Do not overwrite your existing Gemini/Firecrawl keys. Get an API key with speech-to-text access and credits from your ElevenLabs account; do not paste it into chat or commit it.
+
+Choose **Speak a formula** → **Start recording** → **Stop recording** → **Transcribe audio**. Recording stops at 60 seconds. Microphone access requires localhost or HTTPS and browser permission. Alternatively upload WebM, Ogg, M4A/MP4, MP3, or WAV audio under 6 MB.
+
+Review the ElevenLabs transcript, then choose **Convert to math JSON**. Gemini formats spoken math into plain text/LaTeX without solving or correcting it. Review ambiguous grouping and symbols, edit the result, check the confirmation box, and **Download math JSON** or **Add as questions**. Adding preserves existing questions and work. Typed spoken-math text can also be converted without ElevenLabs.
+
+Audio stays in browser memory until explicitly sent to ElevenLabs Scribe v2. The transcript is sent separately to Gemini only on conversion. Provider retention policies apply; avoid personal details. This app does not write audio to disk or include it in exports. Closing the dialog stops recording and discards local audio. Closing does not cancel provider requests already sent.
+
+New routes: `POST /api/transcribe-audio` accepts `{ "audio": "data:audio/webm;base64,..." }`; `POST /api/voice-math` accepts `{ "transcript": "x squared plus three x equals five" }`. Both use existing origin/host checks, body limits, and concurrency limits. `/api/status` adds `elevenlabs_configured` (key presence only, not account validity). No API keys are returned to the browser.
+
+Voice questions have `origin: "voice"`; tutor exports include `question.voice` with the original/reviewed transcript and provider/model provenance, marked as untrusted context. Direct voice JSON downloads include reviewed questions but are not tutor step events. This feature dictates **questions/formulas**, not student solution steps.
+
+API reference: https://elevenlabs.io/docs/api-reference/speech-to-text/convert
+
 ## Enable real handwriting and photo recognition
 
 Copy `.env.example` to `.env` using VS Code's file explorer, then fill in:
