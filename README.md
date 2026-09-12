@@ -23,6 +23,27 @@ interactive API form at <http://127.0.0.1:8000/docs>. The equation checker is
 a `POST` endpoint at `/check-step`, so it cannot be tested by simply opening
 that URL in a browser.
 
+## Optional HeyGen coach videos
+
+This feature is isolated on `feature/heygen-assistant-video`, based on `full-stack-setup`. It narrates the assistant's existing authored guidance; it does not change the math checker or tutoring policy, generate new lesson content, or render mathematical diagrams.
+
+1. Add `HEYGEN_API_KEY` to your **existing** local `.env`, save it, and restart the Python server with the environment file loaded. Do not overwrite your other keys or paste credentials into chat.
+2. Use `uvicorn main:app --reload --env-file .env --host 127.0.0.1 --port 8000`, then open <http://127.0.0.1:8000/app/>. This is the Python assistant, not the separate InkMath service on port 3000.
+3. Sign in or create a learner profile, open a practice topic, and choose **Turn coach guidance into a video**. The script is populated from the latest tutor prompt, worked example and visual cue (when present).
+4. Review the script (maximum 4,000 characters). Write mathematical symbols as spoken words for accurate pronunciation. Remove names, emails, or other personal details. Load public avatars and select a presenter; its default voice is used. `HEYGEN_AVATAR_ID` and `HEYGEN_VOICE_ID` are optional server-side defaults, not additional API keys.
+5. Confirm the script and credit-use checkbox, then select **Generate video**. This sends the script to HeyGen, uses API credits, and requests a 720p landscape avatar video. The website subscription and API billing may differ. Your API key needs access to video creation/status and avatar listing.
+6. Status checks run every eight seconds for up to ten minutes while the dialog is open. Use **Check status** to resume, or reopen the dialog for recent jobs in this practice session. When complete, play the video or open/save it using the delivery link. Check status again if the signed link expires.
+
+The included VS Code task **Run assistant with HeyGen (8001)** uses your selected Python interpreter and serves <http://127.0.0.1:8001/app/> so an existing service on port 8000 can stay running. Stop and restart the task after saving API-key changes; the environment file is loaded at process startup.
+
+**Cost and privacy safeguards:** no generation on page load, guidance updates, or avatar selection; explicit review required on every new draft. Submissions use a stable HeyGen `Idempotency-Key` and a local uniqueness check, so a retry of the same unchanged draft reuses the request. Do not start a new draft to retry a timeout: a paid generation may already exist. Safe retries stop after 23 hours (HeyGen's documented window is 24 hours). At most three active/unconfirmed jobs per learner are allowed in a rolling day. Closing the dialog pauses polling but does **not** cancel a render already submitted to HeyGen. After a browser reload, an unconfirmed submission must be checked in HeyGen's dashboard before creating another video.
+
+The local database stores job IDs, ownership, status, timestamps and a request fingerprint—not scripts, provider keys, or video bytes. Each job is accessible only to its signed-in owner. The reviewed script and chosen avatar/voice IDs are sent to HeyGen; learner profile data and the practice-session ID are not sent. Provider retention policies apply, and delivery URLs should be treated as private bearer links. The existing prototype deployment limitations still apply; do not expose this app publicly without stronger account/rate-limit controls.
+
+Implementation: `heygen_video.py` contains the provider adapter and authenticated router; `static/heygen-video.js` and its stylesheet own the dialog. The assistant integration consists of an import and guidance/reset hooks in `static/app.js`. API endpoints: `GET /api/heygen/config`, `GET /api/heygen/avatars`, `POST /api/heygen/videos`, `GET /api/heygen/videos?sessionId=…`, and `GET /api/heygen/videos/{job_id}`. No raw provider credentials or error bodies are returned.
+
+Official API references: [Create video](https://developers.heygen.com/reference/create-video), [Video status](https://developers.heygen.com/reference/get-video), [Avatar looks](https://developers.heygen.com/reference/list-avatar-looks). Tests use mocked HeyGen responses, not paid live generations. Run `pytest` for backend regressions and `node --test tests/heygen-video.test.mjs` for browser-controller tests.
+
 ## Tablet notebook and pluggable OCR
 
 Open <http://127.0.0.1:8000/app/> on an iPad (or any touch-enabled browser).
@@ -57,13 +78,17 @@ The browser never receives the team URL or credentials. `TEAM_OCR_URL` is a
 server-side adapter endpoint and must receive:
 
 ```json
-{"imageData":"data:image/png;base64,...","sessionId":"...","stepIndex":0}
+{ "imageData": "data:image/png;base64,...", "sessionId": "...", "stepIndex": 0 }
 ```
 
 and must return:
 
 ```json
-{"rawLatex":"a^2 + b^2 = c^2","confidence":0.91,"provider":"Teammate OCR"}
+{
+  "rawLatex": "a^2 + b^2 = c^2",
+  "confidence": 0.91,
+  "provider": "Teammate OCR"
+}
 ```
 
 If your teammate's API uses different field names or multipart uploads, adapt
