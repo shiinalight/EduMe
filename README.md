@@ -92,8 +92,13 @@ attempt in that practice session and connects it back to the foundation lesson.
 When handwriting is present, **Review full solution** silently separates the
 canvas into written lines, sends each line to the server-configured default OCR
 provider, then checks those returned equations in order before displaying the
-review. Set `DEFAULT_OCR_PROVIDER=team-ocr` in `.env` to use a connected team
-OCR service; otherwise it uses local Pix2Tex.
+review. It now defaults to the local teammate project **InkMath** at
+`http://127.0.0.1:3000/api/recognize`. In
+`/Users/demonslayer/Documents/Projects/EduMe-main`, add `GEMINI_API_KEY` to its
+own `.env` and run `npm start`; then start this app with its `.env` file using
+`uvicorn main:app --reload --env-file .env`. Set
+`DEFAULT_OCR_PROVIDER=team-ocr` to use a different connected provider, or
+`local-pix2tex` to use Pix2Tex.
 
 ## Adaptive tutoring strategies
 

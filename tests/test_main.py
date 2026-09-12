@@ -24,13 +24,13 @@ def test_ocr_provider_list_keeps_local_and_team_options(monkeypatch):
     monkeypatch.delenv("TEAM_OCR_URL", raising=False)
     monkeypatch.delenv("OCR_SERVICE_URL", raising=False)
     providers = client.get("/ocr-providers").json()
-    assert [provider["id"] for provider in providers] == ["local-pix2tex", "team-ocr"]
+    assert [provider["id"] for provider in providers] == ["local-pix2tex", "team-ocr", "inkmath"]
     assert providers[1]["configured"] is False
 
 
 def test_default_ocr_provider_is_local_unless_configured(monkeypatch):
     monkeypatch.delenv("DEFAULT_OCR_PROVIDER", raising=False)
-    assert client.get("/ocr-default").json()["providerId"] == "local-pix2tex"
+    assert client.get("/ocr-default").json()["providerId"] == "inkmath"
     monkeypatch.setenv("DEFAULT_OCR_PROVIDER", "team-ocr")
     assert client.get("/ocr-default").json()["providerId"] == "team-ocr"
 

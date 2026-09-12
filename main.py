@@ -568,6 +568,12 @@ def team_ocr_url() -> str | None:
     return os.environ.get("TEAM_OCR_URL") or os.environ.get("OCR_SERVICE_URL")
 
 
+def inkmath_ocr_url() -> str:
+    """Local teammate project; override if it is hosted at a different address."""
+
+    return os.environ.get("INKMATH_OCR_URL", "http://127.0.0.1:3000/api/recognize")
+
+
 def ocr_providers() -> list[OcrProviderInfo]:
     return [
         OcrProviderInfo(
@@ -582,13 +588,19 @@ def ocr_providers() -> list[OcrProviderInfo]:
             description="Your teammate's recognizer, connected through a server-side adapter.",
             configured=bool(team_ocr_url()),
         ),
+        OcrProviderInfo(
+            id="inkmath",
+            label="InkMath",
+            description="Local structured handwriting OCR from the teammate project.",
+            configured=True,
+        ),
     ]
 
 
 def default_ocr_provider() -> str:
-    requested = os.environ.get("DEFAULT_OCR_PROVIDER", "local-pix2tex")
+    requested = os.environ.get("DEFAULT_OCR_PROVIDER", "inkmath")
     known = {provider.id for provider in ocr_providers()}
-    return requested if requested in known else "local-pix2tex"
+    return requested if requested in known else "inkmath"
 
 
 @app.get("/")
@@ -896,6 +908,25 @@ async def recognize_with_team_ocr(request: RecognitionRequest, url: str) -> Reco
     )
 
 
+async def recognize_with_inkmath(request: RecognitionRequest) -> RecognitionResponse:
+    """Translate InkMath's reviewed-line OCR contract into the tutor contract."""
+
+    async with httpx.AsyncClient(timeout=50) as client:
+        response = await client.post(inkmath_ocr_url(), json={"image": request.imageData})
+        response.raise_for_status()
+        result = response.json()
+    lines = result.get("lines", [])
+    if not isinstance(lines, list) or not lines:
+        raise ValueError("InkMath returned no readable mathematical line.")
+    first_line = lines[0]
+    raw_latex = first_line.get("latex")
+    if not isinstance(raw_latex, str) or not raw_latex.strip():
+        raise ValueError("InkMath could not produce LaTeX for this line.")
+    confidence = 0.91 if first_line.get("legibility") == "clear" else 0.55
+    provider = f"InkMath ({result.get('model', 'structured handwriting OCR')})"
+    return RecognitionResponse(rawLatex=raw_latex, confidence=confidence, provider=provider)
+
+
 @app.post("/recognize-handwriting", response_model=RecognitionResponse)
 async def recognize_handwriting(request: RecognitionRequest) -> RecognitionResponse:
     """Recognize a drawing with one of the server-configured OCR providers."""
@@ -916,6 +947,15 @@ async def recognize_handwriting(request: RecognitionRequest) -> RecognitionRespo
             raise HTTPException(
                 status_code=502,
                 detail="Team OCR did not return the expected LaTeX result.",
+            ) from exc
+
+    if request.providerId == "inkmath":
+        try:
+            return await recognize_with_inkmath(request)
+        except (httpx.HTTPError, KeyError, TypeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="InkMath OCR is unavailable. Start the InkMath server at port 3000 with GEMINI_API_KEY configured.",
             ) from exc
 
     try:
