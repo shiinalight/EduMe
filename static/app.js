@@ -1,3 +1,5 @@
+import { setupHeygenVideo } from './heygen-video.js';
+
 const canvas = document.querySelector('#writing-pad');
 const context = canvas.getContext('2d');
 const placeholder = document.querySelector('#canvas-placeholder');
@@ -74,6 +76,7 @@ let currentInkLineGroups = [];
 let currentStudent = null;
 let selectedTopicKey = 'pythagoras';
 const sessionId = crypto.randomUUID();
+const tutorVideo = setupHeygenVideo({ getSessionId: () => learningSessionId });
 
 function resizeCanvas() {
   const scale = window.devicePixelRatio || 1;
@@ -146,6 +149,7 @@ function hideAuthMessage() { authMessage.classList.add('hidden'); }
 
 function applyTutorGuidance(tutor) {
   if (!tutor) return;
+  tutorVideo.setGuidance(tutor);
   tutorGuidance.classList.remove('hidden');
   const labels = { guided: 'Guided', socratic: 'Socratic', worked_example: 'Worked example', visual: 'Visual' };
   tutorMode.textContent = labels[tutor.mode] || 'Guided';
@@ -273,6 +277,7 @@ authForm.addEventListener('submit', async (event) => {
 
 async function signOut() {
   await fetch('/auth/logout', { method: 'POST' });
+  tutorVideo.reset();
   learningSessionId = null;
   currentStudent = null;
   learningApp.classList.add('hidden');
@@ -304,6 +309,8 @@ async function startPractice() {
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || 'A problem could not be created.');
     learningSessionId = data.sessionId;
+    tutorVideo.reset();
+    tutorVideo.setGuidance(data.tutor);
     stepIndex = data.nextStep;
     problemPrompt.textContent = data.prompt;
     problemGoal.textContent = data.goal;
