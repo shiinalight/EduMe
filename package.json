@@ -1,0 +1,6 @@
+{
+  "name": "inkmath", "version": "1.0.0", "private": true, "type": "module",
+  "description": "Worksheet photos and handwritten mathematics to a tutor-ready JSON contract.",
+  "engines": { "node": ">=22" },
+  "scripts": { "start": "node --env-file-if-exists=.env server/index.js", "dev": "node --env-file-if-exists=.env --watch server/index.js", "test": "node --test test/*.test.js" }
+}
