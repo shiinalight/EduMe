@@ -72,6 +72,24 @@ unchanged. `OCR_SERVICE_URL` continues to work as a legacy alias for
 `TEAM_OCR_URL`. When Team OCR is not selected, the service uses local Pix2Tex
 at port `8502`.
 
+## Voice formulas and public lesson links
+
+The teammate's `photo-to-json-handwriting-to-latex` branch was built as a
+separate Node application, so its voice and Firecrawl features are ported into
+this FastAPI service instead of cherry-picked as a disconnected second app.
+
+- `POST /voice/transcribe` accepts a learner-approved recording (maximum 6 MB)
+  and sends it to ElevenLabs Scribe only when `ELEVENLABS_API_KEY` is configured.
+- `POST /voice/math-json` sends an editable transcript to Gemini and returns
+  plain-text/LaTex lines marked `needsReview: true`. It is instructed to retain
+  mistakes and ambiguity, never solve the mathematics.
+- `POST /import-problem-url` uses `FIRECRAWL_API_KEY` to extract existing
+  problems from one public lesson URL. Private, local, IP-address, and custom
+  port URLs are rejected. Returned items are also marked for review.
+
+Copy `.env.example` to `.env` and add only the keys you have authority to use.
+Keys stay server-side and must never be added to browser code or committed.
+
 ## Student learning flow
 
 The first visit to `/app/` now begins with a learner profile. The local app

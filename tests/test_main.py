@@ -2,7 +2,7 @@ import secrets
 
 from fastapi.testclient import TestClient
 
-from main import app, database_connection, practice_problem
+from main import app, database_connection, decode_voice_audio, practice_problem, public_lesson_url
 
 
 client = TestClient(app)
@@ -12,6 +12,38 @@ def test_root_confirms_service_is_running():
     response = client.get("/")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+
+
+def test_voice_audio_and_public_lesson_inputs_are_bounded_before_providers_are_called():
+    audio_bytes, mime_type, extension = decode_voice_audio("data:audio/webm;base64,GkXfow==")
+    assert audio_bytes == bytes([0x1A, 0x45, 0xDF, 0xA3])
+    assert (mime_type, extension) == ("audio/webm", "webm")
+    assert public_lesson_url("https://lessons.example.org/topic#skip-this") == "https://lessons.example.org/topic"
+    try:
+        public_lesson_url("http://127.0.0.1/private-lesson")
+    except ValueError as error:
+        assert "public website" in str(error)
+    else:
+        raise AssertionError("Local lesson URLs must be rejected.")
+
+
+def test_voice_and_link_import_routes_require_configured_server_keys(monkeypatch):
+    learner = TestClient(app)
+    learner.post(
+        "/auth/register",
+        json={
+            "fullName": "Voice Student",
+            "email": f"voice-{secrets.token_hex(6)}@example.test",
+            "password": "safe-practice-password",
+            "grade": 8,
+            "country": "United States",
+            "state": "Oregon",
+        },
+    )
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("FIRECRAWL_API_KEY", raising=False)
+    assert learner.post("/voice/math-json", json={"transcript": "three squared plus four squared"}).status_code == 503
+    assert learner.post("/import-problem-url", json={"url": "https://lessons.example.org/triangle"}).status_code == 503
 
 
 def test_tablet_frontend_is_served():
@@ -128,6 +160,34 @@ def test_learning_session_explains_a_foundational_error():
     assert review.json()["findings"][0]["errorType"] == "missing_square"
 
 
+def test_student_can_request_a_specific_reason_for_a_flagged_line(monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    learner = TestClient(app)
+    learner.post(
+        "/auth/register",
+        json={
+            "fullName": "Reason Student",
+            "email": f"reason-{secrets.token_hex(6)}@example.test",
+            "password": "safe-practice-password",
+            "grade": 8,
+            "country": "United States",
+            "state": "Oregon",
+        },
+    )
+    practice = learner.post("/learning-sessions").json()
+    learner.post(
+        f"/learning-sessions/{practice['sessionId']}/steps",
+        json={"rawLatex": "a + b = c", "confidence": 0.91, "timestamp": 1234567890},
+    )
+    explanation = learner.post(
+        f"/learning-sessions/{practice['sessionId']}/explain-step",
+        json={"rawLatex": "a + b = c", "errorType": "missing_square"},
+    )
+    assert explanation.status_code == 200
+    assert explanation.json()["provider"] == "Coach"
+    assert "squaring" in explanation.json()["explanation"]
+
+
 def test_learning_session_accepts_a_correct_numeric_solution_chain():
     """Equivalent numeric steps and reversed equalities remain correct."""
     learner = TestClient(app)
@@ -217,6 +277,7 @@ def test_learning_session_explains_a_numeric_transcription_disagreement():
         json={"rawLatex": "64 + 255 = c^2", "confidence": 0.91, "timestamp": 1234567890},
     ).json()
     assert result["status"] == "error"
+    assert result["errorType"] == "calculation_error"
     assert "64 + 225 = 289" in result["hint"]
     assert "transcription" in result["hint"]
 
@@ -249,6 +310,20 @@ def test_adaptive_tutor_uses_visual_preference_then_socratic_support():
     assert error["tutor"]["mode"] == "socratic"
     assert "visual" in error["tutor"]["supportingModes"]
 
+    # The next correct attempt is attributed to the question-based prompt
+    # that was active before the learner submitted it.
+    correct = learner.post(
+        f"/learning-sessions/{practice['sessionId']}/steps",
+        json={"rawLatex": "a^2 + b^2 = c^2", "confidence": 0.91, "timestamp": 1234567891},
+    ).json()
+    assert correct["status"] == "correct"
+    with database_connection() as connection:
+        outcome = connection.execute(
+            "SELECT outcome FROM tutor_strategy_events WHERE student_id = ? AND mode = 'socratic' ORDER BY id DESC LIMIT 1",
+            (registered.json()["id"],),
+        ).fetchone()
+    assert outcome["outcome"] == 1
+
 
 def post_step(raw_latex: str, confidence: float = 0.91):
     return client.post(
@@ -273,6 +348,13 @@ def test_correct_equation_is_accepted_when_reordered():
 
 def test_missing_square_is_classified():
     response = post_step("a + b^2 = c^2")
+    assert response.json()["status"] == "error"
+    assert response.json()["errorType"] == "missing_square"
+
+
+def test_missing_all_squares_is_classified_as_a_formula_error():
+    response = post_step("a + b = c")
+    assert response.status_code == 200
     assert response.json()["status"] == "error"
     assert response.json()["errorType"] == "missing_square"
 

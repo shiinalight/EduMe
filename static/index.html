@@ -47,13 +47,13 @@
         </div>
 
         <section class="topic-connection" aria-labelledby="connection-title">
-          <div class="section-heading"><div><p class="eyebrow">How the ideas connect</p><h2 id="connection-title">Build one idea on another</h2></div></div>
+          <div class="section-heading"><div><p class="eyebrow">Learn in this order</p><h2 id="connection-title">What unlocks what</h2><p class="section-caption">Each idea gives you a tool for the next one.</p></div></div>
           <div class="connection-path">
-            <article class="connection-topic foundation-topic"><span class="connection-icon">x²</span><div><strong>Square numbers</strong><small>Learn why 8² means 8 × 8.</small></div><b>52%</b></article>
+            <article class="connection-topic foundation-topic"><span class="connection-icon">x²</span><div><p class="connection-step">1. First</p><strong>Square numbers</strong><small>Use squares like 8² = 64 in Pythagoras.</small></div><b>52%</b></article>
             <span class="connection-arrow" aria-hidden="true">→</span>
-            <button id="home-pythagoras-topic" class="connection-topic active-topic" type="button"><span class="connection-icon">△</span><span><strong>Pythagoras’ theorem</strong><small>Use squares to find a missing side.</small></span><b>68%</b></button>
+            <button id="home-pythagoras-topic" class="connection-topic active-topic" type="button"><span class="connection-icon">△</span><span><p class="connection-step">2. Next</p><strong>Pythagoras’ theorem</strong><small>Use square numbers to find a missing side.</small></span><b>68%</b></button>
             <span class="connection-arrow" aria-hidden="true">→</span>
-            <button id="home-algebra-topic" class="connection-topic active-topic" type="button"><span class="connection-icon">x=</span><span><strong>Algebraic equations</strong><small>Keep both sides balanced.</small></span><b>76%</b></button>
+            <button id="home-algebra-topic" class="connection-topic active-topic" type="button"><span class="connection-icon">x=</span><span><p class="connection-step">3. Then</p><strong>Algebraic equations</strong><small>Use Pythagoras equations to practise finding an unknown.</small></span><b>76%</b></button>
           </div>
         </section>
 
@@ -71,23 +71,21 @@
     <main id="learning-app" class="app-shell hidden">
       <header class="topbar">
         <div>
-          <p id="practice-topic-label" class="eyebrow">Pythagoras practice</p>
-          <h1>Work it out</h1>
+          <p id="practice-topic-label" class="eyebrow">Geometry concept</p>
+          <h1 id="practice-title">Pythagoras’ theorem</h1>
         </div>
         <div class="student-menu">
           <button id="back-to-topics" class="text-button" type="button">← Mathematics</button>
-          <div class="session-status"><span class="status-dot"></span><span id="connection-label">Ready</span></div>
-          <span id="student-summary" class="student-summary"></span>
-          <button id="logout-button" class="text-button" type="button">Sign out</button>
+          <div class="practice-meta" aria-hidden="true"><span id="connection-label">Ready</span><span id="student-summary"></span><button id="logout-button" type="button">Sign out</button></div>
         </div>
       </header>
 
-      <section class="workspace" aria-label="Math notebook">
+      <section id="practice-workspace" class="workspace coach-hidden" aria-label="Math notebook">
         <article class="notebook-card">
           <div class="problem-strip">
             <span class="problem-number">01</span>
-            <div class="problem-copy"><p class="problem-label">Today’s problem</p><p id="problem-prompt">Choose a practice problem to begin.</p><p id="problem-goal" class="problem-goal"></p></div>
-            <button id="new-problem-button" class="problem-action" type="button" aria-label="Get another problem" title="Another problem">↻</button>
+            <div class="problem-copy"><p class="problem-label">Today’s problem</p><p id="problem-prompt">Choose a practice problem to begin.</p><p id="problem-goal" class="problem-goal"></p><p id="upload-status" class="upload-status hidden"></p></div>
+            <div class="problem-actions"><button id="upload-problem-button" class="upload-problem-button" type="button">↑ Upload problem</button><input id="problem-upload-input" type="file" accept="image/png,image/jpeg,image/webp" hidden /><button id="new-problem-button" class="new-problem-button" type="button">↻ New problem</button></div>
           </div>
 
           <section id="visual-board" class="visual-board hidden" aria-label="Pythagoras visual support">
@@ -131,7 +129,8 @@
             <button id="recheck-transcription" class="secondary-button recheck-transcription hidden" type="button">Review corrected transcription</button>
           </section>
 
-          <div class="recognition-panel">
+          <button id="toggle-step-tools" class="toggle-step-tools" type="button" aria-expanded="false">Type a step instead</button>
+          <div id="manual-step-tools" class="recognition-panel hidden">
             <div class="recognition-heading">
               <div>
                 <p class="eyebrow">Current step</p>
@@ -149,26 +148,17 @@
               <button type="button" class="sample-button" data-latex="a + b^2 = c^2">Missing square</button>
               <button type="button" class="sample-button" data-latex="a^2 - b^2 = c^2">Sign error</button>
             </div>
+            <button id="voice-formula-button" class="voice-formula-button" type="button">🎙 Speak a formula</button>
           </div>
 
           <div class="solution-actions">
-            <button id="check-button" class="check-button" type="button">Check this step <span>→</span></button>
+            <button id="check-button" class="check-button hidden" type="button">Check this step <span>→</span></button>
             <button id="review-button" class="review-button" type="button">Review full solution</button>
           </div>
         </article>
 
-        <aside class="coach-card" aria-live="polite">
+        <aside id="coach-card" class="coach-card hidden" aria-live="polite">
           <div class="coach-heading"><span class="coach-mark">✦</span><span>Math coach</span></div>
-          <section id="tutor-guidance" class="tutor-guidance hidden">
-            <p id="tutor-mode" class="tutor-mode">Guided</p>
-            <p id="tutor-prompt">We’ll take one small step at a time.</p>
-          </section>
-          <section id="worked-example" class="worked-example hidden">
-            <p class="eyebrow">Worked example</p>
-            <strong id="worked-title"></strong>
-            <ol id="worked-steps"></ol>
-            <p id="worked-handoff"></p>
-          </section>
           <div id="feedback-empty" class="feedback-empty">
             <h2>Let’s check your thinking</h2>
             <p>After each line, you’ll get a small hint connected to the idea you are using—not just an answer.</p>
@@ -178,13 +168,22 @@
             <h2 id="result-title"></h2>
             <p id="result-hint"></p>
             <div id="review-findings" class="review-findings"></div>
-            <div class="concept-card">
+            <div id="foundation-card" class="concept-card">
               <p class="eyebrow">Foundation</p>
               <strong id="foundation-name">Pythagoras’ theorem</strong>
               <p id="foundation-description">For a right triangle: <i>a</i>² + <i>b</i>² = <i>c</i>², where <i>c</i> is the hypotenuse.</p>
               <button id="foundation-link" class="foundation-link" type="button">See how it works →</button>
             </div>
           </div>
+          <section id="tutor-guidance" class="tutor-guidance hidden">
+            <p id="tutor-mode" class="tutor-mode">Guided</p>
+            <p id="tutor-prompt">We’ll take one small step at a time.</p>
+            <div id="worked-example" class="worked-example hidden">
+              <strong id="worked-title"></strong>
+              <ol id="worked-steps"></ol>
+              <p id="worked-handoff"></p>
+            </div>
+          </section>
           <p id="ocr-message" class="ocr-message hidden"></p>
         </aside>
       </section>
@@ -201,6 +200,24 @@
         <li>Add the two shorter-side squares, then solve for <i>c</i>.</li>
       </ol>
       <p class="modal-note">For a 3–4–5 triangle: 3² + 4² = 9 + 16 = 25, so <i>c</i> = 5.</p>
+    </dialog>
+    <dialog id="voice-dialog" class="voice-dialog">
+      <button id="close-voice" class="icon-button modal-close" type="button" aria-label="Close voice formula">×</button>
+      <p class="eyebrow">Speak a formula</p>
+      <h2>Say it, then check it</h2>
+      <p>We turn your words into maths notation, but we never solve or correct it for you.</p>
+      <div class="voice-actions">
+        <button id="voice-record" class="secondary-button" type="button">Start recording</button>
+        <button id="voice-stop" class="secondary-button" type="button" disabled>Stop</button>
+        <button id="voice-transcribe" class="secondary-button" type="button" disabled>Transcribe</button>
+      </div>
+      <audio id="voice-playback" controls hidden></audio>
+      <label for="voice-transcript">Transcript — edit anything the voice reader misunderstood</label>
+      <textarea id="voice-transcript" rows="3" placeholder="Or type what you would say, for example: a squared plus b squared equals c squared"></textarea>
+      <button id="voice-format" class="secondary-button voice-format" type="button" disabled>Format as maths</button>
+      <div id="voice-formulas" class="voice-formulas hidden"></div>
+      <label id="voice-review-label" class="voice-review hidden"><input id="voice-reviewed" type="checkbox" /> I checked the formula against what I said.</label>
+      <p id="voice-status" class="voice-status"></p>
     </dialog>
     <script src="/app/app.js"></script>
   </body>

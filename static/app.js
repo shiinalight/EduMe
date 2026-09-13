@@ -1,15 +1,19 @@
 const canvas = document.querySelector('#writing-pad');
 const context = canvas.getContext('2d');
+const practiceWorkspace = document.querySelector('#practice-workspace');
 const placeholder = document.querySelector('#canvas-placeholder');
 const errorMarkers = document.querySelector('#error-markers');
 const latexInput = document.querySelector('#latex-input');
 const checkButton = document.querySelector('#check-button');
 const reviewButton = document.querySelector('#review-button');
+const toggleStepToolsButton = document.querySelector('#toggle-step-tools');
+const manualStepTools = document.querySelector('#manual-step-tools');
 const undoButton = document.querySelector('#undo-button');
 const clearButton = document.querySelector('#clear-button');
 const ocrMessage = document.querySelector('#ocr-message');
 const feedbackEmpty = document.querySelector('#feedback-empty');
 const feedbackResult = document.querySelector('#feedback-result');
+const coachCard = document.querySelector('#coach-card');
 const resultLabel = document.querySelector('#result-label');
 const resultTitle = document.querySelector('#result-title');
 const resultHint = document.querySelector('#result-hint');
@@ -37,9 +41,14 @@ const startPythagorasButton = document.querySelector('#start-pythagoras-button')
 const homeAlgebraTopicButton = document.querySelector('#home-algebra-topic');
 const startAlgebraButton = document.querySelector('#start-algebra-button');
 const practiceTopicLabel = document.querySelector('#practice-topic-label');
+const practiceTitle = document.querySelector('#practice-title');
 const problemPrompt = document.querySelector('#problem-prompt');
 const problemGoal = document.querySelector('#problem-goal');
 const newProblemButton = document.querySelector('#new-problem-button');
+const uploadProblemButton = document.querySelector('#upload-problem-button');
+const problemUploadInput = document.querySelector('#problem-upload-input');
+const uploadStatus = document.querySelector('#upload-status');
+const foundationCard = document.querySelector('#foundation-card');
 const foundationName = document.querySelector('#foundation-name');
 const foundationDescription = document.querySelector('#foundation-description');
 const foundationLink = document.querySelector('#foundation-link');
@@ -62,6 +71,19 @@ const inkmathBadge = document.querySelector('#inkmath-badge');
 const inkmathSummary = document.querySelector('#inkmath-summary');
 const inkmathLines = document.querySelector('#inkmath-lines');
 const recheckTranscriptionButton = document.querySelector('#recheck-transcription');
+const voiceFormulaButton = document.querySelector('#voice-formula-button');
+const voiceDialog = document.querySelector('#voice-dialog');
+const closeVoiceButton = document.querySelector('#close-voice');
+const voiceRecordButton = document.querySelector('#voice-record');
+const voiceStopButton = document.querySelector('#voice-stop');
+const voiceTranscribeButton = document.querySelector('#voice-transcribe');
+const voicePlayback = document.querySelector('#voice-playback');
+const voiceTranscript = document.querySelector('#voice-transcript');
+const voiceFormatButton = document.querySelector('#voice-format');
+const voiceFormulas = document.querySelector('#voice-formulas');
+const voiceReviewed = document.querySelector('#voice-reviewed');
+const voiceReviewLabel = document.querySelector('#voice-review-label');
+const voiceStatus = document.querySelector('#voice-status');
 
 let strokes = [];
 let activeStroke = null;
@@ -73,6 +95,11 @@ let currentInkMathLines = [];
 let currentInkLineGroups = [];
 let currentStudent = null;
 let selectedTopicKey = 'pythagoras';
+let voiceRecorder = null;
+let voiceStream = null;
+let voiceAudioBlob = null;
+let voiceAudioUrl = null;
+let voiceFormulaButtons = [];
 const sessionId = crypto.randomUUID();
 
 function resizeCanvas() {
@@ -139,7 +166,157 @@ document.querySelectorAll('.sample-button').forEach((button) => {
   button.addEventListener('click', () => { latexInput.value = button.dataset.latex; latexInput.focus(); });
 });
 
-function showOcrMessage(message) { ocrMessage.textContent = message; ocrMessage.classList.remove('hidden'); }
+function setVoiceStatus(message) { voiceStatus.textContent = message; }
+function updateVoiceFormulaButtons() { voiceFormulaButtons.forEach((button) => { button.disabled = !voiceReviewed.checked; }); }
+function clearVoiceFormulas() {
+  voiceFormulaButtons = [];
+  voiceFormulas.replaceChildren();
+  voiceFormulas.classList.add('hidden');
+  voiceReviewLabel.classList.add('hidden');
+  voiceReviewed.checked = false;
+}
+function releaseVoiceStream() {
+  voiceStream?.getTracks().forEach((track) => track.stop());
+  voiceStream = null;
+  voiceRecorder = null;
+  voiceRecordButton.disabled = false;
+  voiceStopButton.disabled = true;
+}
+function resetVoiceAudio() {
+  if (voiceAudioUrl) URL.revokeObjectURL(voiceAudioUrl);
+  voiceAudioUrl = null;
+  voiceAudioBlob = null;
+  voicePlayback.pause();
+  voicePlayback.removeAttribute('src');
+  voicePlayback.hidden = true;
+  voiceTranscribeButton.disabled = true;
+}
+function resetVoiceDialog() {
+  releaseVoiceStream();
+  resetVoiceAudio();
+  voiceTranscript.value = '';
+  clearVoiceFormulas();
+  setVoiceStatus('Record a short formula, or type what you would say.');
+  setVoiceBusy(false);
+}
+function setVoiceBusy(busy) {
+  voiceRecordButton.disabled = busy || Boolean(voiceRecorder);
+  voiceStopButton.disabled = busy || !voiceRecorder;
+  voiceTranscribeButton.disabled = busy || !voiceAudioBlob;
+  voiceFormatButton.disabled = busy || !voiceTranscript.value.trim();
+}
+function voiceAudioDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('Could not read the recording.'));
+    reader.readAsDataURL(blob);
+  });
+}
+function renderVoiceFormulas(lines) {
+  voiceFormulaButtons = [];
+  voiceFormulas.replaceChildren();
+  lines.forEach((line, index) => {
+    const card = document.createElement('div');
+    card.className = 'voice-formula';
+    const formula = document.createElement('code');
+    formula.textContent = line.latex || line.text;
+    const useButton = document.createElement('button');
+    useButton.type = 'button';
+    useButton.className = 'secondary-button';
+    useButton.textContent = `Use formula ${index + 1}`;
+    useButton.disabled = true;
+    useButton.addEventListener('click', () => {
+      latexInput.value = line.latex || line.text;
+      setStepToolsVisible(true);
+      voiceDialog.close();
+      latexInput.focus();
+    });
+    card.append(formula);
+    if (line.ambiguities?.length) {
+      const warning = document.createElement('small');
+      warning.textContent = line.ambiguities.join(' ');
+      card.append(warning);
+    }
+    card.append(useButton);
+    voiceFormulaButtons.push(useButton);
+    voiceFormulas.append(card);
+  });
+  voiceFormulas.classList.remove('hidden');
+  voiceReviewLabel.classList.remove('hidden');
+  updateVoiceFormulaButtons();
+}
+
+voiceFormulaButton.addEventListener('click', () => { resetVoiceDialog(); voiceDialog.showModal(); });
+closeVoiceButton.addEventListener('click', () => voiceDialog.close());
+voiceDialog.addEventListener('close', () => { releaseVoiceStream(); resetVoiceAudio(); });
+voiceReviewed.addEventListener('change', updateVoiceFormulaButtons);
+voiceTranscript.addEventListener('input', () => { clearVoiceFormulas(); setVoiceBusy(false); });
+voiceRecordButton.addEventListener('click', async () => {
+  if (!navigator.mediaDevices?.getUserMedia || !globalThis.MediaRecorder) {
+    setVoiceStatus('Recording is unavailable here. Type the formula instead.');
+    return;
+  }
+  try {
+    resetVoiceAudio();
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    if (!voiceDialog.open) { stream.getTracks().forEach((track) => track.stop()); return; }
+    const mimeType = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/ogg;codecs=opus'].find((type) => MediaRecorder.isTypeSupported(type));
+    voiceStream = stream;
+    const chunks = [];
+    voiceRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+    voiceRecorder.addEventListener('dataavailable', (event) => { if (event.data.size) chunks.push(event.data); });
+    voiceRecorder.addEventListener('stop', () => {
+      const blob = new Blob(chunks, { type: voiceRecorder?.mimeType || mimeType || 'audio/webm' });
+      releaseVoiceStream();
+      if (!blob.size || blob.size > 6 * 1024 * 1024) { setVoiceStatus('Keep the recording under 6 MB and try again.'); return; }
+      voiceAudioBlob = blob;
+      voiceAudioUrl = URL.createObjectURL(blob);
+      voicePlayback.src = voiceAudioUrl;
+      voicePlayback.hidden = false;
+      voiceTranscribeButton.disabled = false;
+      setVoiceStatus('Listen back, then choose Transcribe.');
+    });
+    voiceRecorder.start();
+    voiceRecordButton.disabled = true;
+    voiceStopButton.disabled = false;
+    setVoiceStatus('Recording locally…');
+  } catch (error) {
+    setVoiceStatus(error.name === 'NotAllowedError' ? 'Microphone permission was not granted. You can type the formula instead.' : 'Could not start recording. You can type the formula instead.');
+  }
+});
+voiceStopButton.addEventListener('click', () => { if (voiceRecorder?.state === 'recording') voiceRecorder.stop(); });
+voiceTranscribeButton.addEventListener('click', async () => {
+  if (!voiceAudioBlob) return;
+  setVoiceBusy(true);
+  setVoiceStatus('Transcribing with ElevenLabs…');
+  try {
+    const response = await fetch('/voice/transcribe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ audioData: await voiceAudioDataUrl(voiceAudioBlob) }) });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || 'Voice transcription failed.');
+    voiceTranscript.value = data.transcript;
+    clearVoiceFormulas();
+    setVoiceStatus('Review the transcript, then format it as maths.');
+  } catch (error) { setVoiceStatus(error.message); }
+  finally { setVoiceBusy(false); }
+});
+voiceFormatButton.addEventListener('click', async () => {
+  const transcript = voiceTranscript.value.trim();
+  if (!transcript) return;
+  setVoiceBusy(true);
+  setVoiceStatus('Formatting your words as maths…');
+  try {
+    const response = await fetch('/voice/math-json', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ transcript }) });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || 'Math formatting failed.');
+    if (!data.lines.length) throw new Error('No formula was found. Please edit the transcript and try again.');
+    renderVoiceFormulas(data.lines);
+    setVoiceStatus(data.warnings?.join(' ') || 'Check the formula, then confirm before using it.');
+  } catch (error) { setVoiceStatus(error.message); }
+  finally { setVoiceBusy(false); }
+});
+
+function showOcrMessage(message) { ocrMessage.textContent = message; ocrMessage.classList.remove('hidden'); showCoach(); }
 function hideOcrMessage() { ocrMessage.classList.add('hidden'); }
 function showAuthMessage(message) { authMessage.textContent = message; authMessage.classList.remove('hidden'); }
 function hideAuthMessage() { authMessage.classList.add('hidden'); }
@@ -147,8 +324,10 @@ function hideAuthMessage() { authMessage.classList.add('hidden'); }
 function applyTutorGuidance(tutor) {
   if (!tutor) return;
   tutorGuidance.classList.remove('hidden');
-  const labels = { guided: 'Guided', socratic: 'Socratic', worked_example: 'Worked example', visual: 'Visual' };
-  tutorMode.textContent = labels[tutor.mode] || 'Guided';
+  // These are internal teaching strategies. Students see the actual kind of
+  // help, never a label such as "Socratic".
+  const labels = { guided: 'Next small step', socratic: 'Think about this', worked_example: 'Try this example', visual: 'Look at the diagram' };
+  tutorMode.textContent = labels[tutor.mode] || 'Next small step';
   tutorPrompt.textContent = tutor.prompt;
   if (tutor.workedExample) {
     workedTitle.textContent = tutor.workedExample.title;
@@ -168,11 +347,36 @@ function applyTutorGuidance(tutor) {
   }
 }
 
+function setFoundationVisibility(errorType) {
+  const needsFoundation = ['missing_square', 'wrong_hypotenuse', 'sign_error'].includes(errorType);
+  foundationCard.classList.toggle('hidden', !needsFoundation);
+}
+
 function clearTutorGuidance() {
   tutorGuidance.classList.add('hidden');
   workedExample.classList.add('hidden');
   visualBoard.classList.add('hidden');
 }
+
+function showCoach() {
+  coachCard.classList.remove('hidden');
+  practiceWorkspace.classList.remove('coach-hidden');
+}
+
+function hideCoach() {
+  coachCard.classList.add('hidden');
+  practiceWorkspace.classList.add('coach-hidden');
+}
+
+function setStepToolsVisible(visible) {
+  manualStepTools.classList.toggle('hidden', !visible);
+  checkButton.classList.toggle('hidden', !visible);
+  toggleStepToolsButton.textContent = visible ? 'Hide typed step' : 'Type a step instead';
+  toggleStepToolsButton.setAttribute('aria-expanded', String(visible));
+  if (visible) latexInput.focus();
+}
+
+toggleStepToolsButton.addEventListener('click', () => setStepToolsVisible(manualStepTools.classList.contains('hidden')));
 
 async function loadDefaultOcrProvider() {
   try {
@@ -307,8 +511,11 @@ async function startPractice() {
     stepIndex = data.nextStep;
     problemPrompt.textContent = data.prompt;
     problemGoal.textContent = data.goal;
+    uploadStatus.classList.add('hidden');
+    problemUploadInput.value = '';
     foundationName.textContent = data.foundation;
     practiceTopicLabel.textContent = `${data.topic} practice`;
+    practiceTitle.textContent = data.topic;
     foundationDescription.textContent = data.topic === 'Algebraic equations'
       ? 'Use inverse operations to keep both sides of an equation balanced while solving for an unknown.'
       : 'Use the theorem fluently and rearrange it to find an unknown side.';
@@ -319,11 +526,20 @@ async function startPractice() {
     connectionLabel.textContent = 'New problem ready';
     latexInput.value = '';
     clearWriting();
+    setStepToolsVisible(false);
+    hideCoach();
     hideOcrMessage();
   } catch (error) { showOcrMessage(error.message); }
   finally { newProblemButton.disabled = false; }
 }
 newProblemButton.addEventListener('click', startPractice);
+uploadProblemButton.addEventListener('click', () => problemUploadInput.click());
+problemUploadInput.addEventListener('change', () => {
+  const [file] = problemUploadInput.files;
+  if (!file) return;
+  uploadStatus.textContent = `Problem photo ready: ${file.name}`;
+  uploadStatus.classList.remove('hidden');
+});
 
 checkButton.addEventListener('click', async () => {
   const rawLatex = latexInput.value.trim();
@@ -340,12 +556,14 @@ checkButton.addEventListener('click', async () => {
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || 'The checker could not process this step.');
     feedbackEmpty.classList.add('hidden');
+    showCoach();
     feedbackResult.className = `feedback-result ${data.status}`;
     reviewFindings.replaceChildren();
     resultLabel.textContent = data.status === 'correct' ? 'Step looks good' : data.status === 'unclear' ? 'Need a clearer step' : 'A useful check';
     resultTitle.textContent = data.complete ? 'Problem complete.' : data.status === 'correct' ? 'Nice connection.' : data.status === 'unclear' ? 'Let’s make this readable.' : 'Pause and check this part.';
     resultHint.textContent = data.hint;
     foundationName.textContent = data.foundation;
+    setFoundationVisibility(data.errorType);
     applyTutorGuidance(data.tutor);
     connectionLabel.textContent = data.complete ? 'Completed' : data.stepAccepted ? `Step ${data.nextStep + 1} ready` : 'Try this step again';
     if (data.stepAccepted) { stepIndex = data.nextStep; latexInput.value = ''; clearWriting(); }
@@ -523,47 +741,93 @@ function showErrorMarkers(lineResults) {
 
 function renderReviewFindings(data, lineResults) {
   reviewFindings.replaceChildren();
-  const findings = lineResults.length
+  const issues = lineResults.length
     ? lineResults.filter((line) => line.status !== 'correct').map((line) => ({
       label: `Line ${line.lineNumber}`,
+      lineNumber: line.lineNumber,
+      errorType: line.errorType,
+      tutor: line.tutor,
+      rawLatex: line.recognizedLatex,
       explanation: line.status === 'unclear'
         ? 'I could not read this line reliably. Please rewrite it clearly, including the squared terms.'
         : line.hint,
     }))
     : data.findings.map((finding, index) => ({
-      label: `Attempt ${index + 1}`,
+      label: `Line ${index + 1}`,
+      lineNumber: index + 1,
+      errorType: finding.errorType,
+      rawLatex: finding.rawLatex,
       explanation: finding.explanation,
     }));
-  findings.forEach((finding) => {
+  if (!issues.length) return { count: 0, root: null };
+
+  const root = issues[0];
+  issues.forEach((finding, index) => {
     const item = document.createElement('div');
     item.className = 'review-finding';
     const title = document.createElement('strong');
     title.textContent = finding.label;
     const explanation = document.createElement('p');
-    explanation.textContent = finding.explanation;
+    explanation.textContent = index > 0 && root.errorType === 'missing_square'
+      ? `This line uses the formula from line ${root.lineNumber}, so correct that formula first.`
+      : finding.explanation;
     item.append(title, explanation);
+    if (finding.rawLatex) {
+      const explainButton = document.createElement('button');
+      explainButton.type = 'button';
+      explainButton.className = 'line-explain-button';
+      explainButton.textContent = 'I don’t understand';
+      explainButton.addEventListener('click', async () => {
+        explainButton.disabled = true;
+        explainButton.textContent = 'Explaining…';
+        try {
+          const response = await fetch(`/learning-sessions/${learningSessionId}/explain-step`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ rawLatex: finding.rawLatex, errorType: finding.errorType }),
+          });
+          const detail = await response.json();
+          if (!response.ok) throw new Error(detail.detail || 'Could not explain this step.');
+          const detailedExplanation = document.createElement('p');
+          detailedExplanation.className = 'line-detailed-explanation';
+          detailedExplanation.textContent = detail.explanation;
+          item.append(detailedExplanation);
+          explainButton.remove();
+        } catch (error) {
+          explainButton.disabled = false;
+          explainButton.textContent = 'Try explanation again';
+        }
+      });
+      item.append(explainButton);
+    }
     reviewFindings.append(item);
   });
-  return findings.length;
+  return { count: issues.length, root };
 }
 
 function displaySolutionReview(data, recognizedLines = [], lineResults = []) {
-  const issueCount = renderReviewFindings(data, lineResults);
+  const review = renderReviewFindings(data, lineResults);
+  const issueCount = review.count;
   const reviewedCurrentLines = lineResults.length > 0;
   feedbackEmpty.classList.add('hidden');
   feedbackResult.className = `feedback-result ${issueCount ? 'error' : 'correct'}`;
   resultLabel.textContent = data.complete ? 'Solution review' : 'Progress review';
   resultTitle.textContent = issueCount
-    ? `${issueCount} line${issueCount === 1 ? '' : 's'} to revisit`
+    ? `Start with line ${review.root.lineNumber}`
     : data.complete ? 'Your solution is complete' : 'Your solution is on track';
   resultHint.textContent = issueCount
-    ? 'The numbered markers point to the lines that need attention. Start with the first one, then use the coach guidance below.'
+    ? review.root.errorType === 'calculation_error'
+      ? 'This is a calculation check, not a new concept to learn.'
+      : 'Fix this first; the next lines will be easier to check after that.'
     : data.complete ? data.summary
     : reviewedCurrentLines
       ? 'These lines are correct so far. Next, simplify the squares and then solve for c.'
       : data.summary;
   foundationName.textContent = data.foundation;
+  setFoundationVisibility(review.root?.errorType);
+  const reviewTutor = review.root?.tutor || lineResults.at(-1)?.tutor;
+  if (reviewTutor) applyTutorGuidance(reviewTutor);
   connectionLabel.textContent = data.complete ? 'Completed' : 'Solution reviewed';
+  showCoach();
 }
 
 async function fetchAndDisplaySolutionReview(recognizedLines = [], lineResults = []) {
@@ -583,7 +847,6 @@ async function evaluateInkMathLines(lines, lineGroups) {
     recognizedLines.push(checkedLine.recognizedLatex);
     const matchingInkLine = lineGroups[Math.min(index, lineGroups.length - 1)];
     lineResults.push({ ...checkedLine, lineNumber: index + 1, centerY: matchingInkLine.centerY });
-    applyTutorGuidance(checkedLine.tutor);
     stepIndex = checkedLine.nextStep;
   }
   showErrorMarkers(lineResults);
@@ -612,7 +875,6 @@ reviewButton.addEventListener('click', async () => {
         const checkedLine = await submitRecognizedLine(lineImageData(handwrittenLines[index]));
         recognizedLines.push(checkedLine.recognizedLatex);
         lineResults.push({ ...checkedLine, lineNumber: index + 1, centerY: handwrittenLines[index].centerY });
-        applyTutorGuidance(checkedLine.tutor);
         stepIndex = checkedLine.nextStep;
       }
     }
