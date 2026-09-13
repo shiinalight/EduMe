@@ -186,6 +186,44 @@ def test_student_can_request_a_specific_reason_for_a_flagged_line(monkeypatch):
     assert explanation.status_code == 200
     assert explanation.json()["provider"] == "Coach"
     assert "squaring" in explanation.json()["explanation"]
+    assert explanation.json()["workedExample"]["title"] == "Parallel example: a 6–8–10 right triangle"
+
+    correct = learner.post(
+        f"/learning-sessions/{practice['sessionId']}/steps",
+        json={"rawLatex": "a^2 + b^2 = c^2", "confidence": 0.91, "timestamp": 1234567891},
+    ).json()
+    assert correct["status"] == "correct"
+    with database_connection() as connection:
+        outcome = connection.execute(
+            "SELECT outcome FROM tutor_strategy_events WHERE student_id = ? AND mode = 'worked_example' ORDER BY id DESC LIMIT 1",
+            (learner.get("/me").json()["id"],),
+        ).fetchone()
+    assert outcome["outcome"] == 1
+
+
+def test_wrong_formula_does_not_show_a_worked_example_before_the_student_asks():
+    learner = TestClient(app)
+    learner.post(
+        "/auth/register",
+        json={
+            "fullName": "Practice Student",
+            "email": f"practice-{secrets.token_hex(6)}@example.test",
+            "password": "safe-practice-password",
+            "grade": 8,
+            "country": "United States",
+            "state": "Oregon",
+        },
+    )
+    practice = learner.post("/learning-sessions").json()
+    responses = [
+        learner.post(
+            f"/learning-sessions/{practice['sessionId']}/steps",
+            json={"rawLatex": "a + b = c", "confidence": 0.91, "timestamp": 1234567890 + index},
+        ).json()
+        for index in range(3)
+    ]
+    assert [response["tutor"]["mode"] for response in responses] == ["socratic", "socratic", "socratic"]
+    assert all(response["tutor"]["workedExample"] is None for response in responses)
 
 
 def test_learning_session_accepts_a_correct_numeric_solution_chain():

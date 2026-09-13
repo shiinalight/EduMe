@@ -84,7 +84,7 @@
         <article class="notebook-card">
           <div class="problem-strip">
             <span class="problem-number">01</span>
-            <div class="problem-copy"><p class="problem-label">Today’s problem</p><p id="problem-prompt">Choose a practice problem to begin.</p><p id="problem-goal" class="problem-goal"></p><p id="upload-status" class="upload-status hidden"></p></div>
+            <div class="problem-copy"><p class="problem-label">Today’s problem</p><p id="problem-prompt">Choose a practice problem to begin.</p><p id="problem-goal" class="problem-goal"></p><p id="upload-status" class="upload-status hidden"></p><button id="problem-understand-button" class="problem-understand-button secondary-button" type="button">I don’t understand the problem</button></div>
             <div class="problem-actions"><button id="upload-problem-button" class="upload-problem-button" type="button">↑ Upload problem</button><input id="problem-upload-input" type="file" accept="image/png,image/jpeg,image/webp" hidden /><button id="new-problem-button" class="new-problem-button" type="button">↻ New problem</button></div>
           </div>
 
@@ -153,7 +153,10 @@
 
           <div class="solution-actions">
             <button id="check-button" class="check-button hidden" type="button">Check this step <span>→</span></button>
-            <button id="review-button" class="review-button" type="button">Review full solution</button>
+            <div class="review-actions">
+              <button id="stuck-button" class="stuck-button" type="button">I’m stuck</button>
+              <button id="review-button" class="review-button" type="button">Review full solution</button>
+            </div>
           </div>
         </article>
 
@@ -167,6 +170,8 @@
             <p id="result-label" class="result-label"></p>
             <h2 id="result-title"></h2>
             <p id="result-hint"></p>
+            <button id="review-understand-button" class="line-explain-button" type="button">I don’t understand</button>
+            <p id="review-understand-detail" class="line-detailed-explanation hidden"></p>
             <div id="review-findings" class="review-findings"></div>
             <div id="foundation-card" class="concept-card">
               <p class="eyebrow">Foundation</p>

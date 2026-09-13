@@ -6,6 +6,8 @@ const errorMarkers = document.querySelector('#error-markers');
 const latexInput = document.querySelector('#latex-input');
 const checkButton = document.querySelector('#check-button');
 const reviewButton = document.querySelector('#review-button');
+const problemUnderstandButton = document.querySelector('#problem-understand-button');
+const stuckButton = document.querySelector('#stuck-button');
 const toggleStepToolsButton = document.querySelector('#toggle-step-tools');
 const manualStepTools = document.querySelector('#manual-step-tools');
 const undoButton = document.querySelector('#undo-button');
@@ -17,6 +19,8 @@ const coachCard = document.querySelector('#coach-card');
 const resultLabel = document.querySelector('#result-label');
 const resultTitle = document.querySelector('#result-title');
 const resultHint = document.querySelector('#result-hint');
+const reviewUnderstandButton = document.querySelector('#review-understand-button');
+const reviewUnderstandDetail = document.querySelector('#review-understand-detail');
 const connectionLabel = document.querySelector('#connection-label');
 const authScreen = document.querySelector('#auth-screen');
 const learningApp = document.querySelector('#learning-app');
@@ -352,10 +356,76 @@ function setFoundationVisibility(errorType) {
   foundationCard.classList.toggle('hidden', !needsFoundation);
 }
 
+function resetReviewUnderstanding() {
+  reviewUnderstandButton.classList.remove('hidden');
+  reviewUnderstandButton.disabled = false;
+  reviewUnderstandButton.textContent = 'I don’t understand';
+  reviewUnderstandDetail.textContent = '';
+  reviewUnderstandDetail.classList.add('hidden');
+}
+
+function renderWorkedExampleAfterExplanation(container, worked) {
+  const example = document.createElement('div');
+  example.className = 'line-worked-example';
+  const label = document.createElement('p');
+  label.className = 'eyebrow';
+  label.textContent = 'Try a similar example';
+  const title = document.createElement('strong');
+  title.textContent = worked.title;
+  const steps = document.createElement('ol');
+  worked.steps.forEach((step) => { const item = document.createElement('li'); item.textContent = step; steps.append(item); });
+  const handoff = document.createElement('p');
+  handoff.textContent = worked.handoff;
+  example.append(label, title, steps, handoff);
+  container.append(example);
+}
+
 function clearTutorGuidance() {
   tutorGuidance.classList.add('hidden');
   workedExample.classList.add('hidden');
   visualBoard.classList.add('hidden');
+}
+
+function showProblemUnderstanding() {
+  feedbackEmpty.classList.add('hidden');
+  feedbackResult.className = 'feedback-result correct';
+  reviewFindings.replaceChildren();
+  resultLabel.textContent = 'Foundation for this problem';
+  resultTitle.textContent = foundationName.textContent;
+  resultHint.textContent = selectedTopicKey === 'algebraic_equations'
+    ? 'This problem asks you to keep both sides balanced while you find the unknown value.'
+    : 'This problem asks you to use the two shorter sides of a right triangle to find the longest side.';
+  setFoundationVisibility('missing_square');
+  clearTutorGuidance();
+  tutorGuidance.classList.remove('hidden');
+  tutorMode.textContent = 'Concept to use';
+  tutorPrompt.textContent = selectedTopicKey === 'algebraic_equations'
+    ? 'What could you undo first while doing the same thing to both sides?'
+    : 'Which side is opposite the right angle, and what does the theorem say about its square?';
+  resetReviewUnderstanding();
+  reviewUnderstandButton.classList.add('hidden');
+  showCoach();
+}
+
+function showStuckHint() {
+  feedbackEmpty.classList.add('hidden');
+  feedbackResult.className = 'feedback-result correct';
+  reviewFindings.replaceChildren();
+  resultLabel.textContent = 'A small next move';
+  resultTitle.textContent = 'Try just this part.';
+  resultHint.textContent = selectedTopicKey === 'algebraic_equations'
+    ? 'Keep the equation balanced: remove the + 3 from both sides before doing anything else.'
+    : 'Write the relationship first: square each side, add the two shorter-side squares, and keep c² on its own.';
+  setFoundationVisibility(null);
+  clearTutorGuidance();
+  tutorGuidance.classList.remove('hidden');
+  tutorMode.textContent = 'One small hint';
+  tutorPrompt.textContent = selectedTopicKey === 'algebraic_equations'
+    ? 'What number could you subtract from both sides to remove the + 3?'
+    : 'Before using the numbers, can you write the version of the theorem with a², b², and c²?';
+  resetReviewUnderstanding();
+  reviewUnderstandButton.classList.add('hidden');
+  showCoach();
 }
 
 function showCoach() {
@@ -377,6 +447,8 @@ function setStepToolsVisible(visible) {
 }
 
 toggleStepToolsButton.addEventListener('click', () => setStepToolsVisible(manualStepTools.classList.contains('hidden')));
+problemUnderstandButton.addEventListener('click', showProblemUnderstanding);
+stuckButton.addEventListener('click', showStuckHint);
 
 async function loadDefaultOcrProvider() {
   try {
@@ -562,6 +634,7 @@ checkButton.addEventListener('click', async () => {
     resultLabel.textContent = data.status === 'correct' ? 'Step looks good' : data.status === 'unclear' ? 'Need a clearer step' : 'A useful check';
     resultTitle.textContent = data.complete ? 'Problem complete.' : data.status === 'correct' ? 'Nice connection.' : data.status === 'unclear' ? 'Let’s make this readable.' : 'Pause and check this part.';
     resultHint.textContent = data.hint;
+    resetReviewUnderstanding();
     foundationName.textContent = data.foundation;
     setFoundationVisibility(data.errorType);
     applyTutorGuidance(data.tutor);
@@ -791,6 +864,7 @@ function renderReviewFindings(data, lineResults) {
           detailedExplanation.className = 'line-detailed-explanation';
           detailedExplanation.textContent = detail.explanation;
           item.append(detailedExplanation);
+          if (detail.workedExample) renderWorkedExampleAfterExplanation(item, detail.workedExample);
           explainButton.remove();
         } catch (error) {
           explainButton.disabled = false;
@@ -810,6 +884,7 @@ function displaySolutionReview(data, recognizedLines = [], lineResults = []) {
   const reviewedCurrentLines = lineResults.length > 0;
   feedbackEmpty.classList.add('hidden');
   feedbackResult.className = `feedback-result ${issueCount ? 'error' : 'correct'}`;
+  resetReviewUnderstanding();
   resultLabel.textContent = data.complete ? 'Solution review' : 'Progress review';
   resultTitle.textContent = issueCount
     ? `Start with line ${review.root.lineNumber}`
@@ -829,6 +904,17 @@ function displaySolutionReview(data, recognizedLines = [], lineResults = []) {
   connectionLabel.textContent = data.complete ? 'Completed' : 'Solution reviewed';
   showCoach();
 }
+
+reviewUnderstandButton.addEventListener('click', () => {
+  const firstLineButton = reviewFindings.querySelector('.line-explain-button');
+  if (firstLineButton) {
+    firstLineButton.click();
+    return;
+  }
+  reviewUnderstandButton.remove();
+  reviewUnderstandDetail.textContent = `There is no flagged error in these lines. ${resultHint.textContent}`;
+  reviewUnderstandDetail.classList.remove('hidden');
+});
 
 async function fetchAndDisplaySolutionReview(recognizedLines = [], lineResults = []) {
   const response = await fetch(`/learning-sessions/${learningSessionId}/review`);

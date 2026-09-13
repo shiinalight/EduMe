@@ -296,6 +296,7 @@ class StepExplanationRequest(BaseModel):
 class StepExplanationResponse(BaseModel):
     explanation: str
     provider: Literal["Gemini", "Coach"]
+    workedExample: WorkedExample | None = None
 
 
 def _residual(relation: Eq) -> Expr:
@@ -662,14 +663,6 @@ def adaptive_tutor_guidance(
     preferred = preferred_tutor_modes(student_id)
     applicable_preferred = [mode for mode in preferred if mode != "visual" or problem.topic_key == "pythagoras"] or ["guided"]
     with database_connection() as connection:
-        repeated_errors = connection.execute(
-            """
-            SELECT COUNT(*) AS count FROM practice_steps
-            JOIN practice_sessions ON practice_sessions.id = practice_steps.practice_session_id
-            WHERE practice_sessions.student_id = ? AND practice_steps.error_type = ?
-            """,
-            (student_id, error_type),
-        ).fetchone()["count"] if error_type else 0
         performance = connection.execute(
             """
             SELECT mode, AVG(outcome) AS success_rate, COUNT(*) AS attempts
@@ -681,9 +674,7 @@ def adaptive_tutor_guidance(
         ).fetchall()
 
     performance_by_mode = {row["mode"]: row for row in performance}
-    if error_type and repeated_errors >= 2:
-        mode: TutorMode = "worked_example"
-    elif error_type:
+    if error_type:
         mode = "socratic"
     elif "visual" in preferred and next_step == 0 and problem.topic_key == "pythagoras":
         mode = "visual"
@@ -1121,12 +1112,19 @@ async def explain_review_step(
     error_type = attempted_step["error_type"]
     if request.errorType and request.errorType != error_type:
         raise HTTPException(status_code=422, detail="The explanation request does not match the recorded step.")
-    return await gemini_step_explanation(
-        practice_problem(session["problem_key"]),
+    problem = practice_problem(session["problem_key"])
+    explanation = await gemini_step_explanation(
+        problem,
         request.rawLatex,
         error_type,
         attempted_step["step_index"],
     )
+    # A parallel example is a second support strategy, intentionally offered
+    # only after the learner says the initial foundation explanation was not enough.
+    if error_type in {"missing_square", "wrong_hypotenuse", "sign_error"}:
+        set_active_tutor_mode(learning_session_id, "worked_example")
+        explanation = explanation.model_copy(update={"workedExample": worked_example_for(problem)})
+    return explanation
 
 
 @app.get("/ocr-providers", response_model=list[OcrProviderInfo])
