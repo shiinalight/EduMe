@@ -1,923 +1,519 @@
 import { setupHeygenVideo } from './heygen-video.js';
+import { setupVoice } from './voice.js';
+import { setupCapture, downloadJSON } from './capture.js';
+import { Drawing, paintStrokes } from './drawing.js';
 
-const canvas = document.querySelector('#writing-pad');
-const context = canvas.getContext('2d');
-const practiceWorkspace = document.querySelector('#practice-workspace');
-const placeholder = document.querySelector('#canvas-placeholder');
-const errorMarkers = document.querySelector('#error-markers');
-const latexInput = document.querySelector('#latex-input');
-const checkButton = document.querySelector('#check-button');
-const reviewButton = document.querySelector('#review-button');
-const toggleStepToolsButton = document.querySelector('#toggle-step-tools');
-const manualStepTools = document.querySelector('#manual-step-tools');
-const undoButton = document.querySelector('#undo-button');
-const clearButton = document.querySelector('#clear-button');
-const ocrMessage = document.querySelector('#ocr-message');
-const feedbackEmpty = document.querySelector('#feedback-empty');
-const feedbackResult = document.querySelector('#feedback-result');
-const coachCard = document.querySelector('#coach-card');
-const resultLabel = document.querySelector('#result-label');
-const resultTitle = document.querySelector('#result-title');
-const resultHint = document.querySelector('#result-hint');
-const connectionLabel = document.querySelector('#connection-label');
-const authScreen = document.querySelector('#auth-screen');
-const learningApp = document.querySelector('#learning-app');
-const learningHome = document.querySelector('#learning-home');
-const dashboardView = document.querySelector('#dashboard-view');
-const authForm = document.querySelector('#auth-form');
-const authTitle = document.querySelector('#auth-title');
-const authDescription = document.querySelector('#auth-description');
-const authSubmit = document.querySelector('#auth-submit');
-const authSwitch = document.querySelector('#auth-switch');
-const authMessage = document.querySelector('#auth-message');
-const profileFields = document.querySelector('#profile-fields');
-const studentSummary = document.querySelector('#student-summary');
-const logoutButton = document.querySelector('#logout-button');
-const homeStudentName = document.querySelector('#home-student-name');
-const homeLogoutButton = document.querySelector('#home-logout-button');
-const homeSubtitle = document.querySelector('#home-subtitle');
-const homeGrade = document.querySelector('#home-grade');
-const backToTopicsButton = document.querySelector('#back-to-topics');
-const homePythagorasTopicButton = document.querySelector('#home-pythagoras-topic');
-const startPythagorasButton = document.querySelector('#start-pythagoras-button');
-const homeAlgebraTopicButton = document.querySelector('#home-algebra-topic');
-const startAlgebraButton = document.querySelector('#start-algebra-button');
-const practiceTopicLabel = document.querySelector('#practice-topic-label');
-const practiceTitle = document.querySelector('#practice-title');
-const problemPrompt = document.querySelector('#problem-prompt');
-const problemGoal = document.querySelector('#problem-goal');
-const newProblemButton = document.querySelector('#new-problem-button');
-const uploadProblemButton = document.querySelector('#upload-problem-button');
-const problemUploadInput = document.querySelector('#problem-upload-input');
-const uploadStatus = document.querySelector('#upload-status');
-const foundationCard = document.querySelector('#foundation-card');
-const foundationName = document.querySelector('#foundation-name');
-const foundationDescription = document.querySelector('#foundation-description');
-const foundationLink = document.querySelector('#foundation-link');
-const foundationModal = document.querySelector('#foundation-modal');
-const closeFoundation = document.querySelector('#close-foundation');
-const tutorMode = document.querySelector('#tutor-mode');
-const tutorPrompt = document.querySelector('#tutor-prompt');
-const tutorGuidance = document.querySelector('#tutor-guidance');
-const workedExample = document.querySelector('#worked-example');
-const workedTitle = document.querySelector('#worked-title');
-const workedSteps = document.querySelector('#worked-steps');
-const workedHandoff = document.querySelector('#worked-handoff');
-const visualBoard = document.querySelector('#visual-board');
-const visualCue = document.querySelector('#visual-cue');
-const reviewFindings = document.querySelector('#review-findings');
-const ocrProviderPicker = document.querySelector('#ocr-provider');
-const inkmathTranscript = document.querySelector('#inkmath-transcript');
-const inkmathTitle = document.querySelector('#inkmath-title');
-const inkmathBadge = document.querySelector('#inkmath-badge');
-const inkmathSummary = document.querySelector('#inkmath-summary');
-const inkmathLines = document.querySelector('#inkmath-lines');
-const recheckTranscriptionButton = document.querySelector('#recheck-transcription');
-const voiceFormulaButton = document.querySelector('#voice-formula-button');
-const voiceDialog = document.querySelector('#voice-dialog');
-const closeVoiceButton = document.querySelector('#close-voice');
-const voiceRecordButton = document.querySelector('#voice-record');
-const voiceStopButton = document.querySelector('#voice-stop');
-const voiceTranscribeButton = document.querySelector('#voice-transcribe');
-const voicePlayback = document.querySelector('#voice-playback');
-const voiceTranscript = document.querySelector('#voice-transcript');
-const voiceFormatButton = document.querySelector('#voice-format');
-const voiceFormulas = document.querySelector('#voice-formulas');
-const voiceReviewed = document.querySelector('#voice-reviewed');
-const voiceReviewLabel = document.querySelector('#voice-review-label');
-const voiceStatus = document.querySelector('#voice-status');
+const $ = id => document.getElementById(id);
+const canvas = $('writing-pad');
+const latexInput = $('latex-input');
+const reviewButton = $('review-button');
+const checkButton = $('check-button');
+const inkReviewed = $('ink-reviewed');
+const recheckButton = $('recheck-transcription');
+let strokes = [], stepIndex = 0, learningSessionId = null;
+let currentStudent = null, currentPractice = null, currentSessionImported = false;
+let authMode = 'register', selectedTopicKey = 'pythagoras', defaultOcrProvider = 'local-pix2tex';
+let currentInkMathLines = [], currentInkLineGroups = [], submittedSteps = [];
+let generation = 0, pending = null, providerGeneration = 0;
 
-let strokes = [];
-let activeStroke = null;
-let stepIndex = 0;
-let learningSessionId = null;
-let authMode = 'register';
-let defaultOcrProvider = 'local-pix2tex';
-let currentInkMathLines = [];
-let currentInkLineGroups = [];
-let currentStudent = null;
-let selectedTopicKey = 'pythagoras';
-let voiceRecorder = null;
-let voiceStream = null;
-let voiceAudioBlob = null;
-let voiceAudioUrl = null;
-let voiceFormulaButtons = [];
-const sessionId = crypto.randomUUID();
 const tutorVideo = setupHeygenVideo({ getSessionId: () => learningSessionId });
-
-function resizeCanvas() {
-  const scale = window.devicePixelRatio || 1;
-  canvas.width = canvas.clientWidth * scale;
-  canvas.height = canvas.clientHeight * scale;
-  context.scale(scale, scale);
-  context.lineCap = 'round';
-  context.lineJoin = 'round';
-  redraw();
-}
-
-function drawStroke(stroke) {
-  if (stroke.length < 2) return;
-  context.beginPath();
-  context.moveTo(stroke[0].x, stroke[0].y);
-  for (let i = 1; i < stroke.length; i += 1) {
-    const point = stroke[i];
-    context.lineWidth = 2.2 + point.pressure * 3.8;
-    context.lineTo(point.x, point.y);
-    context.stroke();
-    context.beginPath();
-    context.moveTo(point.x, point.y);
+const capture = setupCapture({ onPractice: activatePractice });
+const voice = setupVoice({
+  getSessionId: () => learningSessionId,
+  onUse: line => {
+    if (!learningSessionId || pending) return;
+    latexInput.value = line.latex || line.text;
+    setStepToolsVisible(true);
+  },
+  onNotebook: value => openLibrary(value),
+});
+const drawing = new Drawing(canvas, reason => {
+  strokes = drawing.strokes;
+  $('canvas-placeholder').classList.toggle('hidden', Boolean(strokes.length));
+  if (reason !== 'resize') {
+    clearInkMathTranscription();
+    $('error-markers').replaceChildren();
   }
-}
-
-function redraw() {
-  context.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
-  strokes.forEach(drawStroke);
-}
-
-function clearWriting() {
-  strokes = [];
-  redraw();
-  placeholder.classList.remove('hidden');
-  errorMarkers.replaceChildren();
-  clearInkMathTranscription();
-}
-
-function relativePoint(event) {
-  const rect = canvas.getBoundingClientRect();
-  return { x: event.clientX - rect.left, y: event.clientY - rect.top, pressure: event.pressure || 0.5 };
-}
-
-canvas.addEventListener('pointerdown', (event) => {
-  event.preventDefault();
-  canvas.setPointerCapture(event.pointerId);
-  activeStroke = [relativePoint(event)];
-  strokes.push(activeStroke);
-  placeholder.classList.add('hidden');
-});
-canvas.addEventListener('pointermove', (event) => {
-  if (!activeStroke) return;
-  activeStroke.push(relativePoint(event));
-  drawStroke(activeStroke.slice(-2));
-});
-function finishStroke() { activeStroke = null; }
-canvas.addEventListener('pointerup', finishStroke);
-canvas.addEventListener('pointercancel', finishStroke);
-
-undoButton.addEventListener('click', () => { strokes.pop(); redraw(); if (!strokes.length) placeholder.classList.remove('hidden'); });
-clearButton.addEventListener('click', clearWriting);
-document.querySelectorAll('.sample-button').forEach((button) => {
-  button.addEventListener('click', () => { latexInput.value = button.dataset.latex; latexInput.focus(); });
+  refreshControls();
 });
 
-function setVoiceStatus(message) { voiceStatus.textContent = message; }
-function updateVoiceFormulaButtons() { voiceFormulaButtons.forEach((button) => { button.disabled = !voiceReviewed.checked; }); }
-function clearVoiceFormulas() {
-  voiceFormulaButtons = [];
-  voiceFormulas.replaceChildren();
-  voiceFormulas.classList.add('hidden');
-  voiceReviewLabel.classList.add('hidden');
-  voiceReviewed.checked = false;
-}
-function releaseVoiceStream() {
-  voiceStream?.getTracks().forEach((track) => track.stop());
-  voiceStream = null;
-  voiceRecorder = null;
-  voiceRecordButton.disabled = false;
-  voiceStopButton.disabled = true;
-}
-function resetVoiceAudio() {
-  if (voiceAudioUrl) URL.revokeObjectURL(voiceAudioUrl);
-  voiceAudioUrl = null;
-  voiceAudioBlob = null;
-  voicePlayback.pause();
-  voicePlayback.removeAttribute('src');
-  voicePlayback.hidden = true;
-  voiceTranscribeButton.disabled = true;
-}
-function resetVoiceDialog() {
-  releaseVoiceStream();
-  resetVoiceAudio();
-  voiceTranscript.value = '';
-  clearVoiceFormulas();
-  setVoiceStatus('Record a short formula, or type what you would say.');
-  setVoiceBusy(false);
-}
-function setVoiceBusy(busy) {
-  voiceRecordButton.disabled = busy || Boolean(voiceRecorder);
-  voiceStopButton.disabled = busy || !voiceRecorder;
-  voiceTranscribeButton.disabled = busy || !voiceAudioBlob;
-  voiceFormatButton.disabled = busy || !voiceTranscript.value.trim();
-}
-function voiceAudioDataUrl(blob) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = () => reject(new Error('Could not read the recording.'));
-    reader.readAsDataURL(blob);
-  });
-}
-function renderVoiceFormulas(lines) {
-  voiceFormulaButtons = [];
-  voiceFormulas.replaceChildren();
-  lines.forEach((line, index) => {
-    const card = document.createElement('div');
-    card.className = 'voice-formula';
-    const formula = document.createElement('code');
-    formula.textContent = line.latex || line.text;
-    const useButton = document.createElement('button');
-    useButton.type = 'button';
-    useButton.className = 'secondary-button';
-    useButton.textContent = `Use formula ${index + 1}`;
-    useButton.disabled = true;
-    useButton.addEventListener('click', () => {
-      latexInput.value = line.latex || line.text;
-      setStepToolsVisible(true);
-      voiceDialog.close();
-      latexInput.focus();
-    });
-    card.append(formula);
-    if (line.ambiguities?.length) {
-      const warning = document.createElement('small');
-      warning.textContent = line.ambiguities.join(' ');
-      card.append(warning);
-    }
-    card.append(useButton);
-    voiceFormulaButtons.push(useButton);
-    voiceFormulas.append(card);
-  });
-  voiceFormulas.classList.remove('hidden');
-  voiceReviewLabel.classList.remove('hidden');
-  updateVoiceFormulaButtons();
+function showCoach() { $('coach-card').classList.remove('hidden'); $('practice-workspace').classList.remove('coach-hidden'); }
+function showOcrMessage(message) { $('ocr-message').textContent = message; $('ocr-message').classList.remove('hidden'); showCoach(); }
+function hideOcrMessage() { $('ocr-message').textContent = ''; $('ocr-message').classList.add('hidden'); }
+function showAuthMessage(message) { $('auth-message').textContent = message; $('auth-message').classList.remove('hidden'); }
+function hideAuthMessage() { $('auth-message').classList.add('hidden'); }
+function clearWriting() { drawing.reset(); }
+function resizeCanvas() { drawing.resize(); }
+
+function refreshControls() {
+  const locked = Boolean(pending) || !learningSessionId;
+  for (const id of ['check-button', 'review-button', 'download-work', 'latex-input', 'ocr-provider',
+    'toggle-step-tools', 'voice-formula-button', 'clear-button', 'eraser-button', 'pen-only']) $(id).disabled = locked;
+  document.querySelectorAll('.sample-button').forEach(button => { button.disabled = locked; });
+  document.querySelectorAll('.line-explain-button').forEach(button => { button.disabled = locked; });
+  document.querySelectorAll('.sample-row').forEach(row => row.classList.toggle('hidden', currentSessionImported));
+  $('undo-button').disabled = locked || !drawing.history.length;
+  $('redo-button').disabled = locked || !drawing.redoStack.length;
+  drawing.enabled = !locked;
+  inkReviewed.disabled = locked || !currentInkMathLines.length;
+  recheckButton.disabled = locked || !inkReviewed.checked || !currentInkMathLines.length
+    || currentInkMathLines.some(line => !(line.latex || '').trim());
+  $('inkmath-lines').querySelectorAll('input').forEach(input => { input.disabled = locked; });
+  checkButton.firstChild.textContent = pending?.kind === 'step' ? 'Submitting… '
+    : currentSessionImported ? 'Save this step ' : 'Check this step ';
+  reviewButton.textContent = pending?.kind === 'recognition' ? 'Reading handwriting…'
+    : pending?.kind === 'submission' ? 'Submitting reviewed lines…'
+    : pending?.kind === 'review' ? 'Loading saved work…'
+    : strokes.length ? 'Read handwriting' : 'Review saved work';
+  $('download-work').textContent = pending?.kind === 'export' ? 'Preparing JSON…' : '↓ Work JSON';
 }
 
-voiceFormulaButton.addEventListener('click', () => { resetVoiceDialog(); voiceDialog.showModal(); });
-closeVoiceButton.addEventListener('click', () => voiceDialog.close());
-voiceDialog.addEventListener('close', () => { releaseVoiceStream(); resetVoiceAudio(); });
-voiceReviewed.addEventListener('change', updateVoiceFormulaButtons);
-voiceTranscript.addEventListener('input', () => { clearVoiceFormulas(); setVoiceBusy(false); });
-voiceRecordButton.addEventListener('click', async () => {
-  if (!navigator.mediaDevices?.getUserMedia || !globalThis.MediaRecorder) {
-    setVoiceStatus('Recording is unavailable here. Type the formula instead.');
-    return;
-  }
+// A token owns both the session ID and its abort signal. Every continuation
+// checks it before changing UI or starting another request (especially OCR).
+function current(token) { return token.generation === generation && token.id === learningSessionId; }
+function assertCurrent(token) { if (!current(token)) throw new DOMException('Practice changed.', 'AbortError'); }
+function cancelWork() {
+  generation++;
+  pending?.controller.abort(); pending = null;
+  refreshControls();
+}
+async function request(token, path, body) {
+  assertCurrent(token);
+  const response = await fetch(path, { credentials: 'same-origin', signal: token.controller.signal,
+    ...(body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }) });
+  assertCurrent(token);
+  const data = await response.json();
+  assertCurrent(token);
+  if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'The request could not be completed.');
+  return data;
+}
+async function operation(kind, action) {
+  if (!learningSessionId || pending) return;
+  drawing.cancel();
+  const token = { generation, id: learningSessionId, controller: new AbortController(), kind, step: stepIndex, provider: defaultOcrProvider };
+  pending = token; hideOcrMessage(); refreshControls();
+  try { await action(token); }
+  catch (error) { if (current(token) && error.name !== 'AbortError') showOcrMessage(error.message); }
+  finally { if (current(token) && pending === token) { pending = null; refreshControls(); } }
+}
+
+function resetPractice() {
+  cancelWork();
+  learningSessionId = null; currentPractice = null; currentSessionImported = false; stepIndex = 0; submittedSteps = [];
+  voice.reset(); capture.reset(); tutorVideo.reset();
+  if ($('foundation-modal').open) $('foundation-modal').close();
+  latexInput.value = ''; clearWriting(); clearTutorGuidance();
+  drawing.mode = 'pen'; drawing.ignoreTouch = false;
+  $('eraser-button').setAttribute('aria-pressed', 'false'); $('pen-only').checked = false;
+  $('review-findings').replaceChildren(); $('feedback-result').className = 'feedback-result hidden';
+  $('feedback-empty').classList.remove('hidden');
+  for (const id of ['result-label', 'result-title', 'result-hint', 'problem-prompt', 'problem-goal', 'upload-status', 'connection-label']) $(id).textContent = '';
+  $('upload-status').classList.add('hidden'); $('foundation-card').classList.add('hidden');
+  setStepToolsVisible(false); hideOcrMessage();
+  $('coach-card').classList.add('hidden'); $('practice-workspace').classList.add('coach-hidden');
+  refreshControls();
+}
+
+function activatePractice(data) {
+  if (!currentStudent || !data?.sessionId) return;
+  resetPractice();
+  learningSessionId = data.sessionId;
+  currentSessionImported = data.imported === true;
+  // Only problem presentation metadata is retained, never a learner/profile or key.
+  currentPractice = { topic: data.topic || 'My question', prompt: data.prompt || '', goal: data.goal || '' };
+  stepIndex = data.nextStep ?? 0;
+  $('problem-prompt').textContent = currentPractice.prompt;
+  $('problem-goal').textContent = currentPractice.goal;
+  $('practice-topic-label').textContent = currentSessionImported ? 'Self-guided · Not graded' : `${currentPractice.topic} practice`;
+  $('practice-title').textContent = currentPractice.topic;
+  $('foundation-name').textContent = data.foundation || '';
+  $('foundation-description').textContent = currentPractice.topic === 'Algebraic equations'
+    ? 'Use inverse operations to keep both sides balanced while solving for an unknown.'
+    : 'Use the theorem and rearrange it to find an unknown side.';
+  $('student-summary').textContent = `${currentStudent.fullName} · Grade ${currentStudent.grade}`;
+  $('connection-label').textContent = currentSessionImported ? 'Self-guided practice—not graded' : 'New problem ready';
+  $('auth-screen').classList.add('hidden'); $('learning-home').classList.add('hidden'); $('learning-app').classList.remove('hidden');
+  // Set and reveal initial guidance after clearing OCR/coach state, including
+  // the HeyGen launch button; setting a draft never generates a video.
+  hideOcrMessage(); applyTutorGuidance(data.tutor);
+  if (currentSessionImported) displaySavedReview({ findings: [] });
+  refreshControls(); requestAnimationFrame(resizeCanvas);
+  void loadDefaultOcrProvider();
+}
+
+async function startPractice(topicKey = selectedTopicKey) {
+  if (!currentStudent) return;
+  selectedTopicKey = topicKey; resetPractice();
+  $('learning-home').classList.add('hidden'); $('learning-app').classList.remove('hidden');
+  const token = { generation, id: null, controller: new AbortController(), kind: 'start' };
+  pending = token; refreshControls(); showOcrMessage('Opening practice…');
   try {
-    resetVoiceAudio();
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    if (!voiceDialog.open) { stream.getTracks().forEach((track) => track.stop()); return; }
-    const mimeType = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/ogg;codecs=opus'].find((type) => MediaRecorder.isTypeSupported(type));
-    voiceStream = stream;
-    const chunks = [];
-    voiceRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
-    voiceRecorder.addEventListener('dataavailable', (event) => { if (event.data.size) chunks.push(event.data); });
-    voiceRecorder.addEventListener('stop', () => {
-      const blob = new Blob(chunks, { type: voiceRecorder?.mimeType || mimeType || 'audio/webm' });
-      releaseVoiceStream();
-      if (!blob.size || blob.size > 6 * 1024 * 1024) { setVoiceStatus('Keep the recording under 6 MB and try again.'); return; }
-      voiceAudioBlob = blob;
-      voiceAudioUrl = URL.createObjectURL(blob);
-      voicePlayback.src = voiceAudioUrl;
-      voicePlayback.hidden = false;
-      voiceTranscribeButton.disabled = false;
-      setVoiceStatus('Listen back, then choose Transcribe.');
-    });
-    voiceRecorder.start();
-    voiceRecordButton.disabled = true;
-    voiceStopButton.disabled = false;
-    setVoiceStatus('Recording locally…');
+    const data = await request(token, '/learning-sessions', { topicKey });
+    assertCurrent(token); activatePractice(data);
   } catch (error) {
-    setVoiceStatus(error.name === 'NotAllowedError' ? 'Microphone permission was not granted. You can type the formula instead.' : 'Could not start recording. You can type the formula instead.');
-  }
-});
-voiceStopButton.addEventListener('click', () => { if (voiceRecorder?.state === 'recording') voiceRecorder.stop(); });
-voiceTranscribeButton.addEventListener('click', async () => {
-  if (!voiceAudioBlob) return;
-  setVoiceBusy(true);
-  setVoiceStatus('Transcribing with ElevenLabs…');
-  try {
-    const response = await fetch('/voice/transcribe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ audioData: await voiceAudioDataUrl(voiceAudioBlob) }) });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || 'Voice transcription failed.');
-    voiceTranscript.value = data.transcript;
-    clearVoiceFormulas();
-    setVoiceStatus('Review the transcript, then format it as maths.');
-  } catch (error) { setVoiceStatus(error.message); }
-  finally { setVoiceBusy(false); }
-});
-voiceFormatButton.addEventListener('click', async () => {
-  const transcript = voiceTranscript.value.trim();
-  if (!transcript) return;
-  setVoiceBusy(true);
-  setVoiceStatus('Formatting your words as maths…');
-  try {
-    const response = await fetch('/voice/math-json', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ transcript }) });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || 'Math formatting failed.');
-    if (!data.lines.length) throw new Error('No formula was found. Please edit the transcript and try again.');
-    renderVoiceFormulas(data.lines);
-    setVoiceStatus(data.warnings?.join(' ') || 'Check the formula, then confirm before using it.');
-  } catch (error) { setVoiceStatus(error.message); }
-  finally { setVoiceBusy(false); }
-});
-
-function showOcrMessage(message) { ocrMessage.textContent = message; ocrMessage.classList.remove('hidden'); showCoach(); }
-function hideOcrMessage() { ocrMessage.classList.add('hidden'); }
-function showAuthMessage(message) { authMessage.textContent = message; authMessage.classList.remove('hidden'); }
-function hideAuthMessage() { authMessage.classList.add('hidden'); }
-
-function applyTutorGuidance(tutor) {
-  if (!tutor) return;
-  tutorVideo.setGuidance(tutor);
-  tutorGuidance.classList.remove('hidden');
-  // These are internal teaching strategies. Students see the actual kind of
-  // help, never a label such as "Socratic".
-  const labels = { guided: 'Next small step', socratic: 'Think about this', worked_example: 'Try this example', visual: 'Look at the diagram' };
-  tutorMode.textContent = labels[tutor.mode] || 'Next small step';
-  tutorPrompt.textContent = tutor.prompt;
-  if (tutor.workedExample) {
-    workedTitle.textContent = tutor.workedExample.title;
-    workedSteps.replaceChildren(...tutor.workedExample.steps.map((step) => {
-      const item = document.createElement('li'); item.textContent = step; return item;
-    }));
-    workedHandoff.textContent = tutor.workedExample.handoff;
-    workedExample.classList.remove('hidden');
-  } else {
-    workedExample.classList.add('hidden');
-  }
-  if (tutor.visualCue) {
-    visualCue.textContent = tutor.visualCue;
-    visualBoard.classList.remove('hidden');
-  } else {
-    visualBoard.classList.add('hidden');
-  }
+    if (current(token) && error.name !== 'AbortError') showOcrMessage(error.message);
+  } finally { if (current(token) && pending === token) { pending = null; refreshControls(); } }
 }
-
-function setFoundationVisibility(errorType) {
-  const needsFoundation = ['missing_square', 'wrong_hypotenuse', 'sign_error'].includes(errorType);
-  foundationCard.classList.toggle('hidden', !needsFoundation);
+function openLibrary(value = null) {
+  if (!currentStudent) return;
+  // Cancels an in-flight authored-session launch before an imported handoff.
+  cancelWork(); voice.reset(); clearInkMathTranscription(); capture.open(value);
 }
+$('home-capture').addEventListener('click', () => openLibrary());
+$('upload-problem-button').addEventListener('click', () => openLibrary());
+$('home-voice').addEventListener('click', () => voice.open());
+$('voice-formula-button').addEventListener('click', () => voice.open());
+$('new-problem-button').addEventListener('click', () => currentSessionImported ? openLibrary() : startPractice());
+$('back-to-topics').addEventListener('click', () => { resetPractice(); enterLearningHome(currentStudent); });
+for (const id of ['home-pythagoras-topic', 'start-pythagoras-button']) $(id).addEventListener('click', () => startPractice('pythagoras'));
+for (const id of ['home-algebra-topic', 'start-algebra-button']) $(id).addEventListener('click', () => startPractice('algebraic_equations'));
 
 function clearTutorGuidance() {
-  tutorGuidance.classList.add('hidden');
-  workedExample.classList.add('hidden');
-  visualBoard.classList.add('hidden');
+  for (const id of ['tutor-guidance', 'worked-example', 'visual-board']) $(id).classList.add('hidden');
+  for (const id of ['tutor-prompt', 'tutor-mode', 'worked-title', 'worked-handoff', 'visual-cue']) $(id).textContent = '';
+  $('worked-steps').replaceChildren();
 }
-
-function showCoach() {
-  coachCard.classList.remove('hidden');
-  practiceWorkspace.classList.remove('coach-hidden');
+function applyTutorGuidance(tutor) {
+  if (!tutor) return;
+  tutorVideo.setGuidance(tutor); showCoach(); $('tutor-guidance').classList.remove('hidden');
+  const labels = { guided: 'Next small step', socratic: 'Think about this', worked_example: 'Try this example', visual: 'Look at the diagram' };
+  $('tutor-mode').textContent = currentSessionImported ? 'Self-guided practice' : labels[tutor.mode] || 'Next small step';
+  $('tutor-prompt').textContent = tutor.prompt || '';
+  $('worked-example').classList.toggle('hidden', !tutor.workedExample || currentSessionImported);
+  if (tutor.workedExample && !currentSessionImported) {
+    $('worked-title').textContent = tutor.workedExample.title;
+    $('worked-steps').replaceChildren(...tutor.workedExample.steps.map(step => { const li = document.createElement('li'); li.textContent = step; return li; }));
+    $('worked-handoff').textContent = tutor.workedExample.handoff;
+  }
+  $('visual-board').classList.toggle('hidden', !tutor.visualCue || currentSessionImported);
+  $('visual-cue').textContent = tutor.visualCue || '';
 }
-
-function hideCoach() {
-  coachCard.classList.add('hidden');
-  practiceWorkspace.classList.add('coach-hidden');
+function setFoundationVisibility(errorType) {
+  $('foundation-card').classList.toggle('hidden', currentSessionImported || !['missing_square', 'wrong_hypotenuse', 'sign_error'].includes(errorType));
 }
-
 function setStepToolsVisible(visible) {
-  manualStepTools.classList.toggle('hidden', !visible);
-  checkButton.classList.toggle('hidden', !visible);
-  toggleStepToolsButton.textContent = visible ? 'Hide typed step' : 'Type a step instead';
-  toggleStepToolsButton.setAttribute('aria-expanded', String(visible));
+  $('manual-step-tools').classList.toggle('hidden', !visible); checkButton.classList.toggle('hidden', !visible);
+  $('toggle-step-tools').textContent = visible ? 'Hide typed step' : 'Type a step instead';
+  $('toggle-step-tools').setAttribute('aria-expanded', String(visible));
   if (visible) latexInput.focus();
 }
-
-toggleStepToolsButton.addEventListener('click', () => setStepToolsVisible(manualStepTools.classList.contains('hidden')));
+$('toggle-step-tools').addEventListener('click', () => setStepToolsVisible($('manual-step-tools').classList.contains('hidden')));
+document.querySelectorAll('.sample-button').forEach(button => button.addEventListener('click', () => {
+  if (!pending && learningSessionId) { latexInput.value = button.dataset.latex; latexInput.focus(); }
+}));
+$('undo-button').addEventListener('click', () => drawing.undo());
+$('redo-button').addEventListener('click', () => drawing.redo());
+$('clear-button').addEventListener('click', () => drawing.clear());
+$('eraser-button').addEventListener('click', () => {
+  drawing.mode = drawing.mode === 'pen' ? 'eraser' : 'pen';
+  $('eraser-button').setAttribute('aria-pressed', String(drawing.mode === 'eraser'));
+});
+$('pen-only').addEventListener('change', () => { drawing.ignoreTouch = $('pen-only').checked; });
 
 async function loadDefaultOcrProvider() {
+  const token = ++providerGeneration, epoch = generation;
   try {
-    const [providersResponse, defaultResponse] = await Promise.all([
-      fetch('/ocr-providers'), fetch('/ocr-default'),
-    ]);
+    const [providersResponse, defaultResponse] = await Promise.all([fetch('/ocr-providers'), fetch('/ocr-default')]);
     const providers = providersResponse.ok ? await providersResponse.json() : [];
-    if (defaultResponse.ok) defaultOcrProvider = (await defaultResponse.json()).providerId;
-    ocrProviderPicker.replaceChildren(...providers.map((provider) => {
-      const option = document.createElement('option');
-      option.value = provider.id;
+    const preferred = defaultResponse.ok ? (await defaultResponse.json()).providerId : 'inkmath';
+    if (token !== providerGeneration || epoch !== generation || pending) return;
+    $('ocr-provider').replaceChildren(...providers.map(provider => {
+      const option = document.createElement('option'); option.value = provider.id;
       option.textContent = provider.configured ? provider.label : `${provider.label} (not connected)`;
-      option.disabled = !provider.configured;
-      return option;
+      option.disabled = !provider.configured; return option;
     }));
-    ocrProviderPicker.value = defaultOcrProvider;
-    if (!ocrProviderPicker.value && providers.some((provider) => provider.configured)) {
-      defaultOcrProvider = providers.find((provider) => provider.configured).id;
-      ocrProviderPicker.value = defaultOcrProvider;
-    }
-  } catch (_) {
-    defaultOcrProvider = 'inkmath';
+    defaultOcrProvider = providers.find(p => p.id === preferred && p.configured)?.id || providers.find(p => p.configured)?.id || 'inkmath';
+    $('ocr-provider').value = defaultOcrProvider;
+  } catch { /* Keep the last selected provider; its request reports connection errors. */ }
+}
+$('ocr-provider').addEventListener('change', () => {
+  if (pending) return;
+  providerGeneration++; defaultOcrProvider = $('ocr-provider').value; clearInkMathTranscription(); hideOcrMessage();
+});
+
+async function submitLine(token, rawLatex) {
+  const data = await request(token, `/learning-sessions/${encodeURIComponent(token.id)}/steps`, { rawLatex, confidence: 0.91, timestamp: Date.now() });
+  assertCurrent(token);
+  submittedSteps.push({ rawLatex });
+  if (data.stepAccepted || data.saved) stepIndex = data.nextStep ?? stepIndex;
+  return { ...data, recognizedLatex: rawLatex };
+}
+function displayStep(data) {
+  if (currentSessionImported || data.assessment === 'ungraded') {
+    displaySavedReview({ findings: submittedSteps }); applyTutorGuidance(data.tutor); return;
   }
+  $('feedback-empty').classList.add('hidden'); showCoach();
+  $('feedback-result').className = `feedback-result ${['correct', 'unclear', 'error'].includes(data.status) ? data.status : ''}`;
+  $('review-findings').replaceChildren();
+  $('result-label').textContent = data.status === 'correct' ? 'Step looks good' : data.status === 'unclear' ? 'Need a clearer step' : 'A useful check';
+  $('result-title').textContent = data.complete ? 'Problem complete.' : data.status === 'correct' ? 'Nice connection.' : data.status === 'unclear' ? 'Let’s make this readable.' : 'Pause and check this part.';
+  $('result-hint').textContent = data.hint;
+  $('foundation-name').textContent = data.foundation; setFoundationVisibility(data.errorType); applyTutorGuidance(data.tutor);
+  $('connection-label').textContent = data.complete ? 'Completed' : data.stepAccepted ? `Step ${data.nextStep + 1} ready` : 'Try this step again';
 }
-
-ocrProviderPicker.addEventListener('change', () => {
-  defaultOcrProvider = ocrProviderPicker.value;
-  clearInkMathTranscription();
-  hideOcrMessage();
-});
-
-function setAuthMode(mode) {
-  authMode = mode;
-  const registering = mode === 'register';
-  authTitle.textContent = registering ? 'Create your learner profile' : 'Welcome back';
-  authDescription.textContent = registering ? 'This helps tailor foundations and practice to where you are learning.' : 'Sign in to continue your personalised practice.';
-  authSubmit.firstChild.textContent = registering ? 'Create profile ' : 'Sign in ';
-  authSwitch.textContent = registering ? 'I already have an account' : 'Create a new learner profile';
-  profileFields.classList.toggle('hidden', !registering);
-  document.querySelector('#full-name').required = registering;
-  document.querySelector('#grade').required = registering;
-  document.querySelector('#country').required = registering;
-  document.querySelector('#state').required = registering;
-  document.querySelector('#password').autocomplete = registering ? 'new-password' : 'current-password';
-  hideAuthMessage();
-}
-
-function enterLearningHome(student) {
-  currentStudent = student;
-  homeStudentName.textContent = student.fullName;
-  homeGrade.textContent = student.grade;
-  homeSubtitle.textContent = `A concept map shaped around your Grade ${student.grade} mathematics practice.`;
-  authScreen.classList.add('hidden');
-  learningApp.classList.add('hidden');
-  learningHome.classList.remove('hidden');
-  dashboardView.classList.remove('hidden');
-}
-
-function openTopicPractice(topicKey) {
-  if (!currentStudent) return;
-  selectedTopicKey = topicKey;
-  studentSummary.textContent = `${currentStudent.fullName} · Grade ${currentStudent.grade} · ${currentStudent.curriculum.jurisdiction}`;
-  foundationName.textContent = currentStudent.curriculum.foundation;
-  foundationDescription.textContent = currentStudent.curriculum.explanation;
-  learningHome.classList.add('hidden');
-  learningApp.classList.remove('hidden');
-  requestAnimationFrame(resizeCanvas);
-  loadDefaultOcrProvider();
-  startPractice();
-}
-
-function openPythagorasPractice() { openTopicPractice('pythagoras'); }
-function openAlgebraPractice() { openTopicPractice('algebraic_equations'); }
-
-authSwitch.addEventListener('click', () => setAuthMode(authMode === 'register' ? 'login' : 'register'));
-authForm.addEventListener('submit', async (event) => {
-  event.preventDefault();
-  hideAuthMessage();
-  authSubmit.disabled = true;
-  authSubmit.firstChild.textContent = 'Saving… ';
-  const payload = { email: document.querySelector('#email').value, password: document.querySelector('#password').value };
-  if (authMode === 'register') Object.assign(payload, {
-    fullName: document.querySelector('#full-name').value,
-    grade: Number(document.querySelector('#grade').value),
-    country: document.querySelector('#country').value,
-    state: document.querySelector('#state').value,
-    tutorModes: Array.from(document.querySelectorAll('[name="tutor-mode"]:checked')).map((input) => input.value),
-  });
-  if (authMode === 'register' && !payload.tutorModes.length) { showAuthMessage('Choose at least one helpful teaching approach.'); authSubmit.disabled = false; setAuthMode(authMode); return; }
-  try {
-    const response = await fetch(`/auth/${authMode}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || 'We could not save your profile.');
-    enterLearningHome(data);
-  } catch (error) { showAuthMessage(error.message); }
-  finally { authSubmit.disabled = false; setAuthMode(authMode); }
-});
-
-async function signOut() {
-  await fetch('/auth/logout', { method: 'POST' });
-  tutorVideo.reset();
-  learningSessionId = null;
-  currentStudent = null;
-  learningApp.classList.add('hidden');
-  learningHome.classList.add('hidden');
-  authScreen.classList.remove('hidden');
-  authForm.reset();
-  setAuthMode('login');
-}
-
-logoutButton.addEventListener('click', signOut);
-homeLogoutButton.addEventListener('click', signOut);
-backToTopicsButton.addEventListener('click', () => {
-  learningApp.classList.add('hidden');
-  learningHome.classList.remove('hidden');
-  dashboardView.classList.remove('hidden');
-});
-homePythagorasTopicButton.addEventListener('click', openPythagorasPractice);
-startPythagorasButton.addEventListener('click', openPythagorasPractice);
-homeAlgebraTopicButton.addEventListener('click', openAlgebraPractice);
-startAlgebraButton.addEventListener('click', openAlgebraPractice);
-
-async function startPractice() {
-  newProblemButton.disabled = true;
-  try {
-    const response = await fetch('/learning-sessions', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ topicKey: selectedTopicKey }),
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || 'A problem could not be created.');
-    learningSessionId = data.sessionId;
-    tutorVideo.reset();
-    tutorVideo.setGuidance(data.tutor);
-    stepIndex = data.nextStep;
-    problemPrompt.textContent = data.prompt;
-    problemGoal.textContent = data.goal;
-    uploadStatus.classList.add('hidden');
-    problemUploadInput.value = '';
-    foundationName.textContent = data.foundation;
-    practiceTopicLabel.textContent = `${data.topic} practice`;
-    practiceTitle.textContent = data.topic;
-    foundationDescription.textContent = data.topic === 'Algebraic equations'
-      ? 'Use inverse operations to keep both sides of an equation balanced while solving for an unknown.'
-      : 'Use the theorem fluently and rearrange it to find an unknown side.';
-    clearTutorGuidance();
-    reviewFindings.replaceChildren();
-    feedbackEmpty.classList.remove('hidden');
-    feedbackResult.className = 'feedback-result hidden';
-    connectionLabel.textContent = 'New problem ready';
-    latexInput.value = '';
-    clearWriting();
-    setStepToolsVisible(false);
-    hideCoach();
-    hideOcrMessage();
-  } catch (error) { showOcrMessage(error.message); }
-  finally { newProblemButton.disabled = false; }
-}
-newProblemButton.addEventListener('click', startPractice);
-uploadProblemButton.addEventListener('click', () => problemUploadInput.click());
-problemUploadInput.addEventListener('change', () => {
-  const [file] = problemUploadInput.files;
-  if (!file) return;
-  uploadStatus.textContent = `Problem photo ready: ${file.name}`;
-  uploadStatus.classList.remove('hidden');
-});
-
-checkButton.addEventListener('click', async () => {
+checkButton.addEventListener('click', () => {
   const rawLatex = latexInput.value.trim();
-  if (!rawLatex) { showOcrMessage('Enter an equation before checking this step.'); latexInput.focus(); return; }
-  if (!learningSessionId) { showOcrMessage('Choose a new problem before checking your step.'); return; }
-  hideOcrMessage();
-  checkButton.disabled = true;
-  checkButton.firstChild.textContent = 'Checking…';
-  try {
-    const response = await fetch(`/learning-sessions/${learningSessionId}/steps`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rawLatex, confidence: 0.91, timestamp: Date.now() })
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || 'The checker could not process this step.');
-    feedbackEmpty.classList.add('hidden');
-    showCoach();
-    feedbackResult.className = `feedback-result ${data.status}`;
-    reviewFindings.replaceChildren();
-    resultLabel.textContent = data.status === 'correct' ? 'Step looks good' : data.status === 'unclear' ? 'Need a clearer step' : 'A useful check';
-    resultTitle.textContent = data.complete ? 'Problem complete.' : data.status === 'correct' ? 'Nice connection.' : data.status === 'unclear' ? 'Let’s make this readable.' : 'Pause and check this part.';
-    resultHint.textContent = data.hint;
-    foundationName.textContent = data.foundation;
-    setFoundationVisibility(data.errorType);
-    applyTutorGuidance(data.tutor);
-    connectionLabel.textContent = data.complete ? 'Completed' : data.stepAccepted ? `Step ${data.nextStep + 1} ready` : 'Try this step again';
-    if (data.stepAccepted) { stepIndex = data.nextStep; latexInput.value = ''; clearWriting(); }
-  } catch (error) { showOcrMessage(error.message); }
-  finally { checkButton.disabled = false; checkButton.firstChild.textContent = 'Check this step '; }
+  if (!rawLatex) { showOcrMessage('Enter an equation before submitting this step.'); return; }
+  return operation('step', async token => {
+    const data = await submitLine(token, rawLatex); assertCurrent(token); displayStep(data);
+    if (data.stepAccepted || data.saved) { latexInput.value = ''; clearWriting(); }
+    if (data.saved || data.assessment === 'ungraded') await fetchAndDisplaySolutionReview(token);
+  });
 });
 
 function handwritingLineGroups() {
-  const markedStrokes = strokes.map((stroke) => ({
-    stroke,
-    centerY: stroke.reduce((total, point) => total + point.y, 0) / stroke.length,
-  })).sort((left, right) => left.centerY - right.centerY);
-  const threshold = Math.max(42, canvas.clientHeight * 0.12);
-  return markedStrokes.reduce((groups, item) => {
-    const current = groups.at(-1);
-    if (!current || item.centerY - current.centerY > threshold) groups.push({ centerY: item.centerY, strokes: [item.stroke] });
-    else {
-      current.strokes.push(item.stroke);
-      current.centerY = (current.centerY * (current.strokes.length - 1) + item.centerY) / current.strokes.length;
-    }
+  const marked = strokes.map(stroke => ({ stroke, centerY: stroke.reduce((n, p) => n + p.y, 0) / stroke.length })).sort((a, b) => a.centerY - b.centerY);
+  const threshold = Math.max(42, drawing.height * 0.12);
+  return marked.reduce((groups, item) => {
+    const last = groups.at(-1);
+    if (!last || item.centerY - last.centerY > threshold) groups.push({ centerY: item.centerY, strokes: [item.stroke] });
+    else { last.strokes.push(item.stroke); last.centerY = (last.centerY * (last.strokes.length - 1) + item.centerY) / last.strokes.length; }
     return groups;
   }, []);
 }
-
 function lineImageData(line) {
-  const points = line.strokes.flat();
-  const padding = 26;
-  const left = Math.max(0, Math.min(...points.map((point) => point.x)) - padding);
-  const top = Math.max(0, Math.min(...points.map((point) => point.y)) - padding);
-  const right = Math.min(canvas.clientWidth, Math.max(...points.map((point) => point.x)) + padding);
-  const bottom = Math.min(canvas.clientHeight, Math.max(...points.map((point) => point.y)) + padding);
-  const scale = window.devicePixelRatio || 1;
-  const image = document.createElement('canvas');
-  image.width = Math.max(80, (right - left) * scale);
-  image.height = Math.max(80, (bottom - top) * scale);
-  const imageContext = image.getContext('2d');
-  imageContext.fillStyle = '#fffef8';
-  imageContext.fillRect(0, 0, image.width, image.height);
-  imageContext.scale(scale, scale);
-  imageContext.strokeStyle = '#000';
-  imageContext.lineCap = 'round';
-  imageContext.lineJoin = 'round';
-  line.strokes.forEach((stroke) => {
-    if (stroke.length < 2) return;
-    imageContext.beginPath();
-    imageContext.moveTo(stroke[0].x - left, stroke[0].y - top);
-    for (let index = 1; index < stroke.length; index += 1) {
-      const point = stroke[index];
-      imageContext.lineWidth = 2.2 + point.pressure * 3.8;
-      imageContext.lineTo(point.x - left, point.y - top);
-      imageContext.stroke();
-      imageContext.beginPath();
-      imageContext.moveTo(point.x - left, point.y - top);
-    }
-  });
+  let left = drawing.width, top = drawing.height, right = 0, bottom = 0;
+  for (const stroke of line.strokes) for (const p of stroke) { left = Math.min(left, p.x); top = Math.min(top, p.y); right = Math.max(right, p.x); bottom = Math.max(bottom, p.y); }
+  left = Math.max(0, left - 32); top = Math.max(0, top - 32);
+  right = Math.min(drawing.width, right + 32); bottom = Math.min(drawing.height, bottom + 32);
+  const scale = window.devicePixelRatio || 1, image = document.createElement('canvas');
+  image.width = Math.max(80, Math.ceil((right - left) * scale)); image.height = Math.max(80, Math.ceil((bottom - top) * scale));
+  const ctx = image.getContext('2d'); ctx.fillStyle = '#fffef8'; ctx.fillRect(0, 0, image.width, image.height);
+  ctx.scale(scale, scale); paintStrokes(ctx, line.strokes, left, top);
   return image.toDataURL('image/png');
 }
-
-function fullWritingImageData() {
-  const points = strokes.flat();
-  if (!points.length) return null;
-  const padding = 32;
-  const left = Math.max(0, Math.min(...points.map((point) => point.x)) - padding);
-  const top = Math.max(0, Math.min(...points.map((point) => point.y)) - padding);
-  const right = Math.min(canvas.clientWidth, Math.max(...points.map((point) => point.x)) + padding);
-  const bottom = Math.min(canvas.clientHeight, Math.max(...points.map((point) => point.y)) + padding);
-  const scale = window.devicePixelRatio || 1;
-  const image = document.createElement('canvas');
-  image.width = Math.max(80, Math.round((right - left) * scale));
-  image.height = Math.max(80, Math.round((bottom - top) * scale));
-  const imageContext = image.getContext('2d');
-  imageContext.fillStyle = '#fffef8';
-  imageContext.fillRect(0, 0, image.width, image.height);
-  imageContext.drawImage(
-    canvas,
-    Math.round(left * scale), Math.round(top * scale), Math.round((right - left) * scale), Math.round((bottom - top) * scale),
-    0, 0, image.width, image.height,
-  );
-  return image.toDataURL('image/png');
-}
-
+function fullWritingImageData() { return strokes.length ? lineImageData({ strokes }) : null; }
 function clearInkMathTranscription() {
-  currentInkMathLines = [];
-  currentInkLineGroups = [];
-  inkmathTranscript.classList.add('hidden');
-  inkmathLines.replaceChildren();
-  recheckTranscriptionButton.classList.add('hidden');
+  currentInkMathLines = []; currentInkLineGroups = []; inkReviewed.checked = false; inkReviewed.disabled = true;
+  $('inkmath-transcript').classList.add('hidden'); $('inkmath-lines').replaceChildren();
+  $('inkmath-title').textContent = ''; $('inkmath-summary').textContent = ''; $('inkmath-badge').textContent = '';
+  recheckButton.classList.add('hidden'); recheckButton.disabled = true;
 }
-
-function showInkMathTranscription(recognition) {
-  inkmathTitle.textContent = 'InkMath read your working';
-  inkmathBadge.textContent = recognition.model || 'InkMath';
-  const uncertainCount = recognition.lines.filter((line) => line.legibility === 'uncertain').length;
-  inkmathSummary.textContent = uncertainCount
-    ? `It found ${recognition.lines.length} line${recognition.lines.length === 1 ? '' : 's'}; ${uncertainCount} needs a quick visual check.`
-    : `It found ${recognition.lines.length} line${recognition.lines.length === 1 ? '' : 's'} in reading order and sent them to Math Coach.`;
-  currentInkMathLines = recognition.lines.map((line) => ({ ...line }));
-  inkmathLines.replaceChildren(...currentInkMathLines.map((line, index) => {
-    const card = document.createElement('div');
-    card.className = `inkmath-line ${line.legibility}`;
-    const heading = document.createElement('div');
-    heading.className = 'inkmath-line-head';
-    heading.textContent = `Line ${index + 1} · ${line.legibility === 'clear' ? 'read clearly' : 'please verify'}`;
-    const latex = document.createElement('input');
-    latex.type = 'text';
-    latex.value = line.latex || line.text || '';
-    latex.setAttribute('aria-label', `InkMath transcription for line ${index + 1}`);
-    latex.addEventListener('input', () => {
-      currentInkMathLines[index].latex = latex.value;
-      // A student-confirmed correction should be checked as deliberate input,
-      // rather than penalised for the original OCR confidence.
-      currentInkMathLines[index].legibility = 'clear';
+function showInkMathTranscription(recognition, groups) {
+  clearInkMathTranscription();
+  currentInkMathLines = recognition.lines.map(line => ({ ...line, latex: line.latex || line.text || '', ambiguities: [...(line.ambiguities || [])] }));
+  currentInkLineGroups = groups.map(group => ({ relativeY: group.centerY / drawing.height }));
+  $('inkmath-title').textContent = 'Review your handwriting transcription';
+  $('inkmath-badge').textContent = recognition.model || recognition.provider || defaultOcrProvider;
+  const uncertain = currentInkMathLines.filter(line => line.legibility !== 'clear').length;
+  $('inkmath-summary').textContent = `${currentInkMathLines.length} lines transcribed; ${uncertain} need a careful visual check. Nothing has been submitted. Edit every line, then confirm below. ${(recognition.warnings || []).join(' ')}`;
+  for (const [index, line] of currentInkMathLines.entries()) {
+    const card = document.createElement('div'); card.className = `inkmath-line ${line.legibility === 'clear' ? 'clear' : 'uncertain'}`;
+    const label = document.createElement('label'); label.textContent = `Line ${index + 1} · ${line.legibility === 'clear' ? 'verify transcription' : 'uncertain—please verify'}`;
+    const input = document.createElement('input'); input.type = 'text'; input.value = line.latex; input.maxLength = 16000;
+    input.setAttribute('aria-label', `Handwriting transcription for line ${index + 1}`);
+    input.addEventListener('input', () => {
+      if (pending || !currentInkMathLines.includes(line)) return;
+      line.latex = input.value; inkReviewed.checked = false; refreshControls();
     });
-    card.append(heading, latex);
-    if (line.ambiguities?.length) {
-      const warning = document.createElement('p');
-      warning.className = 'inkmath-warning';
-      warning.textContent = `Check: ${line.ambiguities.join(' · ')}`;
-      card.append(warning);
+    label.append(input); card.append(label);
+    if (line.ambiguities.length || line.confidence != null) {
+      const warning = document.createElement('p'); warning.className = 'inkmath-warning';
+      warning.textContent = [line.confidence != null ? `OCR confidence: ${line.confidence}.` : '', ...line.ambiguities].filter(Boolean).join(' '); card.append(warning);
     }
-    return card;
-  }));
-  inkmathTranscript.classList.remove('hidden');
-  recheckTranscriptionButton.classList.remove('hidden');
+    $('inkmath-lines').append(card);
+  }
+  $('inkmath-transcript').classList.remove('hidden'); recheckButton.classList.remove('hidden'); refreshControls();
 }
+inkReviewed.addEventListener('change', refreshControls);
 
-async function recognizeFullWritingWithInkMath(imageData) {
-  const response = await fetch('/recognize-handwriting/inkmath', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ imageData, sessionId, stepIndex, providerId: 'inkmath' }),
-  });
-  const recognition = await response.json();
-  if (!response.ok) throw new Error(recognition.detail || 'InkMath could not read the handwriting.');
-  return recognition;
-}
-
-async function submitRecognizedLine(imageData) {
-  const recognitionResponse = await fetch('/recognize-handwriting', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ imageData, sessionId, stepIndex, providerId: defaultOcrProvider }),
-  });
-  const recognition = await recognitionResponse.json();
-  if (!recognitionResponse.ok) throw new Error(recognition.detail || 'The handwriting could not be read.');
-  const stepResponse = await fetch(`/learning-sessions/${learningSessionId}/steps`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ rawLatex: recognition.rawLatex, confidence: recognition.confidence, timestamp: Date.now() }),
-  });
-  const step = await stepResponse.json();
-  if (!stepResponse.ok) throw new Error(step.detail || 'A recognized line could not be checked.');
-  step.recognizedLatex = recognition.rawLatex;
-  return step;
-}
-
-async function submitRecognizedLatex(rawLatex, legibility) {
-  const stepResponse = await fetch(`/learning-sessions/${learningSessionId}/steps`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ rawLatex, confidence: legibility === 'clear' ? 0.91 : 0.55, timestamp: Date.now() }),
-  });
-  const step = await stepResponse.json();
-  if (!stepResponse.ok) throw new Error(step.detail || 'A recognized line could not be checked.');
-  step.recognizedLatex = rawLatex;
-  return step;
-}
-
-function showErrorMarkers(lineResults) {
-  errorMarkers.replaceChildren();
-  lineResults.filter((line) => line.status !== 'correct').forEach((line, index) => {
-    const marker = document.createElement('div');
-    marker.className = 'error-marker';
-    marker.style.top = `${Math.max(18, Math.min(canvas.clientHeight - 18, line.centerY))}px`;
-    marker.innerHTML = `<span>${index + 1}</span><span>←</span>`;
-    errorMarkers.append(marker);
-  });
-}
-
-function renderReviewFindings(data, lineResults) {
-  reviewFindings.replaceChildren();
-  const issues = lineResults.length
-    ? lineResults.filter((line) => line.status !== 'correct').map((line) => ({
-      label: `Line ${line.lineNumber}`,
-      lineNumber: line.lineNumber,
-      errorType: line.errorType,
-      tutor: line.tutor,
-      rawLatex: line.recognizedLatex,
-      explanation: line.status === 'unclear'
-        ? 'I could not read this line reliably. Please rewrite it clearly, including the squared terms.'
-        : line.hint,
-    }))
-    : data.findings.map((finding, index) => ({
-      label: `Line ${index + 1}`,
-      lineNumber: index + 1,
-      errorType: finding.errorType,
-      rawLatex: finding.rawLatex,
-      explanation: finding.explanation,
-    }));
-  if (!issues.length) return { count: 0, root: null };
-
-  const root = issues[0];
-  issues.forEach((finding, index) => {
-    const item = document.createElement('div');
-    item.className = 'review-finding';
-    const title = document.createElement('strong');
-    title.textContent = finding.label;
-    const explanation = document.createElement('p');
-    explanation.textContent = index > 0 && root.errorType === 'missing_square'
-      ? `This line uses the formula from line ${root.lineNumber}, so correct that formula first.`
-      : finding.explanation;
-    item.append(title, explanation);
-    if (finding.rawLatex) {
-      const explainButton = document.createElement('button');
-      explainButton.type = 'button';
-      explainButton.className = 'line-explain-button';
-      explainButton.textContent = 'I don’t understand';
-      explainButton.addEventListener('click', async () => {
-        explainButton.disabled = true;
-        explainButton.textContent = 'Explaining…';
-        try {
-          const response = await fetch(`/learning-sessions/${learningSessionId}/explain-step`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ rawLatex: finding.rawLatex, errorType: finding.errorType }),
-          });
-          const detail = await response.json();
-          if (!response.ok) throw new Error(detail.detail || 'Could not explain this step.');
-          const detailedExplanation = document.createElement('p');
-          detailedExplanation.className = 'line-detailed-explanation';
-          detailedExplanation.textContent = detail.explanation;
-          item.append(detailedExplanation);
-          explainButton.remove();
-        } catch (error) {
-          explainButton.disabled = false;
-          explainButton.textContent = 'Try explanation again';
-        }
-      });
-      item.append(explainButton);
+reviewButton.addEventListener('click', () => operation(strokes.length ? 'recognition' : 'review', async token => {
+  const groups = handwritingLineGroups();
+  if (!groups.length) { await fetchAndDisplaySolutionReview(token); return; }
+  let recognition;
+  const body = imageData => ({ imageData, sessionId: token.id, stepIndex: token.step, providerId: token.provider });
+  if (token.provider === 'inkmath') {
+    recognition = await request(token, '/recognize-handwriting/inkmath', body(fullWritingImageData()));
+  } else {
+    // Snapshot every crop before the first await; no step is posted by Read.
+    const images = groups.map(lineImageData), lines = [], warnings = [];
+    for (const imageData of images) {
+      assertCurrent(token);
+      const line = await request(token, '/recognize-handwriting', body(imageData));
+      lines.push({ latex: line.rawLatex, confidence: line.confidence, legibility: line.confidence >= 0.8 ? 'clear' : 'uncertain', ambiguities: line.ambiguities || [] });
+      warnings.push(...(line.warnings || []));
     }
-    reviewFindings.append(item);
-  });
-  return { count: issues.length, root };
-}
+    recognition = { lines, warnings, provider: token.provider };
+  }
+  assertCurrent(token);
+  if (!Array.isArray(recognition.lines) || !recognition.lines.length) throw new Error('No lines were found. Try clearer writing or type your step.');
+  showInkMathTranscription(recognition, groups);
+}));
 
-function displaySolutionReview(data, recognizedLines = [], lineResults = []) {
-  const review = renderReviewFindings(data, lineResults);
-  const issueCount = review.count;
-  const reviewedCurrentLines = lineResults.length > 0;
-  feedbackEmpty.classList.add('hidden');
-  feedbackResult.className = `feedback-result ${issueCount ? 'error' : 'correct'}`;
-  resultLabel.textContent = data.complete ? 'Solution review' : 'Progress review';
-  resultTitle.textContent = issueCount
-    ? `Start with line ${review.root.lineNumber}`
-    : data.complete ? 'Your solution is complete' : 'Your solution is on track';
-  resultHint.textContent = issueCount
-    ? review.root.errorType === 'calculation_error'
-      ? 'This is a calculation check, not a new concept to learn.'
-      : 'Fix this first; the next lines will be easier to check after that.'
-    : data.complete ? data.summary
-    : reviewedCurrentLines
-      ? 'These lines are correct so far. Next, simplify the squares and then solve for c.'
-      : data.summary;
-  foundationName.textContent = data.foundation;
-  setFoundationVisibility(review.root?.errorType);
-  const reviewTutor = review.root?.tutor || lineResults.at(-1)?.tutor;
-  if (reviewTutor) applyTutorGuidance(reviewTutor);
-  connectionLabel.textContent = data.complete ? 'Completed' : 'Solution reviewed';
+recheckButton.addEventListener('click', () => {
+  if (!inkReviewed.checked || !currentInkMathLines.length || currentInkMathLines.some(line => !line.latex.trim())) return;
+  // Copy reviewed values. Consume approval before the first await; a retry must
+  // not immediately duplicate a save, including after an ambiguous network error.
+  const lines = currentInkMathLines.map(line => ({ latex: line.latex.trim() }));
+  const groups = currentInkLineGroups.map(group => ({ ...group }));
+  return operation('submission', async token => {
+    clearInkMathTranscription();
+    const results = [];
+    try {
+      for (const [index, line] of lines.entries()) {
+        assertCurrent(token);
+        const step = await submitLine(token, line.latex); assertCurrent(token);
+        results.push({ ...step, lineNumber: index + 1, relativeY: groups[Math.min(index, groups.length - 1)]?.relativeY ?? 0.5 });
+      }
+    } catch (error) {
+      assertCurrent(token);
+      if (currentSessionImported) displaySavedReview({ findings: submittedSteps });
+      throw new Error(`${error.message} Some lines may already be saved. Review saved history before transcribing or submitting again.`);
+    }
+    if (currentSessionImported || results.every(step => step.saved)) { latexInput.value = ''; clearWriting(); }
+    showErrorMarkers(results);
+    await fetchAndDisplaySolutionReview(token, results);
+  });
+});
+
+function showErrorMarkers(lines) {
+  $('error-markers').replaceChildren();
+  if (currentSessionImported || lines.some(line => line.assessment === 'ungraded')) return;
+  lines.filter(line => line.status !== 'correct').forEach((line, i) => {
+    const marker = document.createElement('div'); marker.className = 'error-marker';
+    marker.style.top = `${Math.max(18, Math.min(drawing.height - 18, line.relativeY * drawing.height))}px`;
+    marker.textContent = `${i + 1} ←`; $('error-markers').append(marker);
+  });
+}
+function displaySavedReview(data) {
+  $('feedback-empty').classList.add('hidden'); $('feedback-result').className = 'feedback-result';
+  $('result-label').textContent = 'Self-guided notebook';
+  $('result-title').textContent = data.findings?.length ? 'Work saved—not graded' : 'Self-guided practice—not graded';
+  $('result-hint').textContent = 'These are your recorded steps, not a correctness or completion assessment. Review your reasoning with a teacher or a trusted solution.';
+  $('connection-label').textContent = data.findings?.length ? 'Work saved—not graded' : 'No steps saved yet';
+  $('foundation-card').classList.add('hidden'); $('error-markers').replaceChildren(); $('review-findings').replaceChildren();
+  for (const [index, finding] of (data.findings || []).entries()) {
+    const item = document.createElement('div'); item.className = 'saved-step';
+    const label = document.createElement('strong'); label.textContent = `Saved step ${index + 1} · Not graded`;
+    const raw = document.createElement('p'); raw.textContent = finding.rawLatex;
+    item.append(label, raw); $('review-findings').append(item);
+  }
   showCoach();
 }
-
-async function fetchAndDisplaySolutionReview(recognizedLines = [], lineResults = []) {
-  const response = await fetch(`/learning-sessions/${learningSessionId}/review`);
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.detail || 'The solution could not be reviewed.');
-  displaySolutionReview(data, recognizedLines, lineResults);
-}
-
-async function evaluateInkMathLines(lines, lineGroups) {
-  const recognizedLines = [];
-  const lineResults = [];
-  for (let index = 0; index < lines.length; index += 1) {
-    reviewButton.textContent = `Checking line ${index + 1} of ${lines.length}…`;
-    const line = lines[index];
-    const checkedLine = await submitRecognizedLatex(line.latex || line.text, line.legibility);
-    recognizedLines.push(checkedLine.recognizedLatex);
-    const matchingInkLine = lineGroups[Math.min(index, lineGroups.length - 1)];
-    lineResults.push({ ...checkedLine, lineNumber: index + 1, centerY: matchingInkLine.centerY });
-    stepIndex = checkedLine.nextStep;
-  }
-  showErrorMarkers(lineResults);
-  await fetchAndDisplaySolutionReview(recognizedLines, lineResults);
-}
-
-reviewButton.addEventListener('click', async () => {
-  if (!learningSessionId) { showOcrMessage('Choose a new problem before reviewing the solution.'); return; }
-  const handwrittenLines = handwritingLineGroups();
-  if (!handwrittenLines.length) { showOcrMessage('Write your working on the notepad before reviewing it.'); return; }
-  reviewButton.disabled = true;
-  reviewButton.textContent = 'Reading writing…';
-  try {
-    const recognizedLines = [];
-    const lineResults = [];
-    if (defaultOcrProvider === 'inkmath') {
-      const recognition = await recognizeFullWritingWithInkMath(fullWritingImageData());
-      currentInkLineGroups = handwrittenLines;
-      showInkMathTranscription(recognition);
-      await evaluateInkMathLines(currentInkMathLines, currentInkLineGroups);
-      return;
-    } else {
-      clearInkMathTranscription();
-      for (let index = 0; index < handwrittenLines.length; index += 1) {
-        reviewButton.textContent = `Reading line ${index + 1} of ${handwrittenLines.length}…`;
-        const checkedLine = await submitRecognizedLine(lineImageData(handwrittenLines[index]));
-        recognizedLines.push(checkedLine.recognizedLatex);
-        lineResults.push({ ...checkedLine, lineNumber: index + 1, centerY: handwrittenLines[index].centerY });
-        stepIndex = checkedLine.nextStep;
-      }
+function renderReviewFindings(data, lineResults) {
+  $('review-findings').replaceChildren();
+  const issues = lineResults.length ? lineResults.filter(line => line.status !== 'correct').map(line => ({
+    lineNumber: line.lineNumber, errorType: line.errorType, rawLatex: line.recognizedLatex, explanation: line.hint, tutor: line.tutor,
+  })) : (data.findings || []).map((finding, i) => ({ ...finding, lineNumber: i + 1 }));
+  const owner = { generation, id: learningSessionId };
+  for (const finding of issues) {
+    const item = document.createElement('div'); item.className = 'review-finding';
+    const title = document.createElement('strong'); title.textContent = `Line ${finding.lineNumber}`;
+    const explanation = document.createElement('p'); explanation.textContent = finding.explanation;
+    item.append(title, explanation);
+    if (finding.rawLatex) {
+      const button = document.createElement('button'); button.type = 'button'; button.className = 'line-explain-button'; button.textContent = 'I don’t understand';
+      button.addEventListener('click', async () => {
+        if (!current(owner) || pending || !item.isConnected || currentSessionImported) return;
+        return operation('explanation', async token => {
+          button.disabled = true; button.textContent = 'Explaining…';
+          try {
+            const detail = await request(token, `/learning-sessions/${encodeURIComponent(token.id)}/explain-step`, { rawLatex: finding.rawLatex, errorType: finding.errorType });
+            assertCurrent(token);
+            const text = document.createElement('p'); text.className = 'line-detailed-explanation'; text.textContent = detail.explanation;
+            item.append(text); button.remove();
+          } finally { if (current(token)) { button.disabled = false; button.textContent = 'Try explanation again'; } }
+        });
+      });
+      item.append(button);
     }
-    showErrorMarkers(lineResults);
-    await fetchAndDisplaySolutionReview(recognizedLines, lineResults);
-  } catch (error) { showOcrMessage(error.message); }
-  finally { reviewButton.disabled = false; reviewButton.textContent = 'Review full solution'; }
-});
-
-recheckTranscriptionButton.addEventListener('click', async () => {
-  if (!learningSessionId || !currentInkMathLines.length) return;
-  hideOcrMessage();
-  recheckTranscriptionButton.disabled = true;
-  reviewButton.disabled = true;
-  try {
-    await evaluateInkMathLines(currentInkMathLines, currentInkLineGroups);
-  } catch (error) { showOcrMessage(error.message); }
-  finally {
-    recheckTranscriptionButton.disabled = false;
-    reviewButton.disabled = false;
-    reviewButton.textContent = 'Review full solution';
+    $('review-findings').append(item);
   }
+  return issues;
+}
+function displaySolutionReview(data, lineResults = []) {
+  if (currentSessionImported || data.assessment === 'ungraded') { displaySavedReview(data); return; }
+  const issues = renderReviewFindings(data, lineResults), root = issues[0];
+  $('feedback-empty').classList.add('hidden'); $('feedback-result').className = `feedback-result ${issues.length ? 'error' : 'correct'}`;
+  $('result-label').textContent = data.complete ? 'Solution review' : 'Progress review';
+  $('result-title').textContent = root ? `Start with line ${root.lineNumber}` : data.complete ? 'Your solution is complete' : 'Your submitted steps are on track';
+  $('result-hint').textContent = root ? root.explanation : data.summary;
+  $('foundation-name').textContent = data.foundation; setFoundationVisibility(root?.errorType);
+  applyTutorGuidance(root?.tutor || lineResults.at(-1)?.tutor);
+  $('connection-label').textContent = data.complete ? 'Completed' : 'Solution reviewed'; showCoach();
+}
+async function fetchAndDisplaySolutionReview(token, lineResults = []) {
+  const data = await request(token, `/learning-sessions/${encodeURIComponent(token.id)}/review`);
+  assertCurrent(token); displaySolutionReview(data, lineResults); return data;
+}
+
+$('download-work').addEventListener('click', () => operation('export', async token => {
+  const problem = { ...currentPractice };
+  const ink = { coordinateSystem: 'canvas-pixels', width: drawing.width, height: drawing.height, strokes: structuredClone(strokes) };
+  const manualLatex = latexInput.value;
+  const data = await request(token, `/learning-sessions/${encodeURIComponent(token.id)}/review`);
+  assertCurrent(token);
+  // Imported reviews contain every saved step. Authored reviews only expose
+  // errors: retain all successful POST observations locally, without grades.
+  const steps = currentSessionImported || data.assessment === 'ungraded' ? data.findings || [] : submittedSteps;
+  downloadJSON({ schemaVersion: '1.0', observationOnly: true, title: problem.topic, sourceType: 'manual',
+    questions: [{ label: '1', text: problem.prompt, latex: '', diagram_description: '', ambiguities: [] }],
+    currentProblem: problem, savedSteps: steps.map(step => ({ rawLatex: step.rawLatex })),
+    currentWork: { ink, manualLatex },
+    note: 'Observed work only; no grading, completion or learner data. Import restores questions only, not student steps or ink.',
+  }, 'math-work.json');
+}));
+
+$('foundation-link').addEventListener('click', () => { if (!currentSessionImported) $('foundation-modal').showModal(); });
+$('close-foundation').addEventListener('click', () => $('foundation-modal').close());
+$('foundation-modal').addEventListener('click', event => { if (event.target === $('foundation-modal')) $('foundation-modal').close(); });
+
+function setAuthMode(mode) {
+  authMode = mode; const registering = mode === 'register';
+  $('auth-title').textContent = registering ? 'Create your learner profile' : 'Welcome back';
+  $('auth-description').textContent = registering ? 'This helps tailor foundations and practice to where you are learning.' : 'Sign in to continue your personalised practice.';
+  $('auth-submit').firstChild.textContent = registering ? 'Create profile ' : 'Sign in ';
+  $('auth-switch').textContent = registering ? 'I already have an account' : 'Create a new learner profile';
+  $('profile-fields').classList.toggle('hidden', !registering);
+  for (const id of ['full-name', 'grade', 'country', 'state']) $(id).required = registering;
+  $('password').autocomplete = registering ? 'new-password' : 'current-password';
+}
+function enterLearningHome(student) {
+  if (!student) return;
+  currentStudent = student; $('home-student-name').textContent = student.fullName; $('home-grade').textContent = student.grade;
+  $('home-subtitle').textContent = 'Choose a guided topic or bring your own questions.';
+  $('auth-screen').classList.add('hidden'); $('learning-app').classList.add('hidden'); $('learning-home').classList.remove('hidden'); $('dashboard-view').classList.remove('hidden');
+}
+$('auth-switch').addEventListener('click', () => { setAuthMode(authMode === 'register' ? 'login' : 'register'); hideAuthMessage(); });
+$('auth-form').addEventListener('submit', async event => {
+  event.preventDefault(); if ($('auth-submit').disabled) return;
+  const epoch = ++generation, mode = authMode;
+  hideAuthMessage(); $('auth-submit').disabled = true; $('auth-switch').disabled = true;
+  const payload = { email: $('email').value, password: $('password').value };
+  if (mode === 'register') Object.assign(payload, { fullName: $('full-name').value, grade: Number($('grade').value), country: $('country').value, state: $('state').value,
+    tutorModes: Array.from(document.querySelectorAll('[name="tutor-mode"]:checked')).map(input => input.value) });
+  try {
+    if (mode === 'register' && !payload.tutorModes.length) throw new Error('Choose at least one helpful teaching approach.');
+    const response = await fetch(`/auth/${mode}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    const data = await response.json(); if (epoch !== generation) return;
+    if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Could not sign in.');
+    enterLearningHome(data); $('password').value = '';
+  } catch (error) { if (epoch === generation) showAuthMessage(error.message); }
+  finally { if (epoch === generation) { $('auth-submit').disabled = false; $('auth-switch').disabled = false; setAuthMode(authMode); } }
 });
-
-foundationLink.addEventListener('click', () => foundationModal.showModal());
-closeFoundation.addEventListener('click', () => foundationModal.close());
-foundationModal.addEventListener('click', (event) => { if (event.target === foundationModal) foundationModal.close(); });
-
+async function signOut() {
+  // Clear local data and invalidate continuations immediately, before logout I/O.
+  resetPractice(); currentStudent = null; providerGeneration++;
+  const epoch = generation;
+  $('learning-app').classList.add('hidden'); $('learning-home').classList.add('hidden'); $('auth-screen').classList.remove('hidden');
+  $('home-student-name').textContent = ''; $('student-summary').textContent = ''; $('auth-form').reset(); setAuthMode('login'); hideAuthMessage();
+  $('auth-submit').disabled = true; $('auth-switch').disabled = true;
+  try {
+    const response = await fetch('/auth/logout', { method: 'POST' });
+    if (!response.ok) throw new Error('Sign-out could not be confirmed. Try again before leaving this device.');
+  } catch (error) { if (epoch === generation) showAuthMessage(error.message); }
+  finally { if (epoch === generation) { $('auth-submit').disabled = false; $('auth-switch').disabled = false; } }
+}
+$('logout-button').addEventListener('click', signOut); $('home-logout-button').addEventListener('click', signOut);
 async function restoreLogin() {
+  const epoch = generation;
   try {
     const response = await fetch('/me');
-    if (response.ok) enterLearningHome(await response.json());
-    else setAuthMode('register');
-  } catch (_) { setAuthMode('register'); }
+    const data = response.ok ? await response.json() : null;
+    if (epoch !== generation) return;
+    if (data) enterLearningHome(data); else setAuthMode('register');
+  } catch { if (epoch === generation) setAuthMode('register'); }
 }
-
 window.addEventListener('resize', resizeCanvas);
-resizeCanvas();
-restoreLogin();
+if (globalThis.ResizeObserver) new ResizeObserver(resizeCanvas).observe(canvas);
+resizeCanvas(); refreshControls(); void restoreLogin();

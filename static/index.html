@@ -6,6 +6,7 @@
     <title>Math Notes</title>
     <link rel="stylesheet" href="/app/styles.css" />
     <link rel="stylesheet" href="/app/heygen-video.css" />
+    <link rel="stylesheet" href="/app/capture.css" />
   </head>
   <body>
     <section id="auth-screen" class="auth-shell">
@@ -44,8 +45,16 @@
         <div class="maths-simple-intro">
           <p class="eyebrow">Mathematics · Grade <span id="home-grade">8</span></p>
           <h1>Your maths journey</h1>
-          <p id="home-subtitle">See what you know, and what to practise next.</p>
+          <p id="home-subtitle">Choose a guided topic or bring your own questions.</p>
         </div>
+
+        <section class="capture-home" aria-labelledby="capture-home-title">
+          <p class="eyebrow">Your questions · One notebook</p>
+          <h2 id="capture-home-title">Bring your maths here.</h2>
+          <p>Import a worksheet photo, a public lesson link, spoken maths or your own text. Review it once, save it privately, and practise in the same workspace.</p>
+          <div class="capture-actions"><button id="home-capture" class="secondary-button" type="button">Open question library →</button><button id="home-voice" class="secondary-button" type="button">Speak or upload audio</button></div>
+          <p class="caption">Built-in topics have authored checking. Your imported questions use self-guided, ungraded practice.</p>
+        </section>
 
         <section class="topic-connection" aria-labelledby="connection-title">
           <div class="section-heading"><div><p class="eyebrow">Learn in this order</p><h2 id="connection-title">What unlocks what</h2><p class="section-caption">Each idea gives you a tool for the next one.</p></div></div>
@@ -59,7 +68,7 @@
         </section>
 
         <section class="topic-progress-section" aria-labelledby="topic-progress-title">
-          <div class="section-heading"><div><p class="eyebrow">Your progress</p><h2 id="topic-progress-title">Topics you are learning</h2></div><p class="section-caption">The bars grow as you practise.</p></div>
+          <div class="section-heading"><div><p class="eyebrow">Practice topics</p><h2 id="topic-progress-title">Topics you are learning</h2></div><p class="section-caption">Progress percentages below are prototype examples, not measured mastery.</p></div>
           <div class="topic-progress-list">
             <article class="topic-progress-row"><span class="progress-topic-icon square-icon">x²</span><div><strong>Square numbers &amp; roots</strong><small>This helps with Pythagoras.</small><span class="topic-progress-track"><i style="width:52%"></i></span></div><b>52%</b></article>
             <button id="start-pythagoras-button" class="topic-progress-row current-progress" type="button"><span class="progress-topic-icon triangle-icon">△</span><span><strong>Pythagoras’ theorem</strong><small>Ready for your next practice.</small><span class="topic-progress-track"><i style="width:68%"></i></span></span><b>68% <em>Practise →</em></b></button>
@@ -86,7 +95,7 @@
           <div class="problem-strip">
             <span class="problem-number">01</span>
             <div class="problem-copy"><p class="problem-label">Today’s problem</p><p id="problem-prompt">Choose a practice problem to begin.</p><p id="problem-goal" class="problem-goal"></p><p id="upload-status" class="upload-status hidden"></p></div>
-            <div class="problem-actions"><button id="upload-problem-button" class="upload-problem-button" type="button">↑ Upload problem</button><input id="problem-upload-input" type="file" accept="image/png,image/jpeg,image/webp" hidden /><button id="new-problem-button" class="new-problem-button" type="button">↻ New problem</button></div>
+            <div class="problem-actions"><button id="upload-problem-button" class="upload-problem-button" type="button">↑ Question library</button><button id="new-problem-button" class="new-problem-button" type="button">↻ New problem</button><button id="download-work" class="new-problem-button" type="button">↓ Work JSON</button></div>
           </div>
 
           <section id="visual-board" class="visual-board hidden" aria-label="Pythagoras visual support">
@@ -107,7 +116,10 @@
             </div>
             <div class="tool-buttons" aria-label="Drawing tools">
               <button id="undo-button" class="icon-button" type="button" aria-label="Undo last stroke" title="Undo">↶</button>
+              <button id="redo-button" class="icon-button" type="button" aria-label="Redo last drawing action" title="Redo">↷</button>
+              <button id="eraser-button" class="icon-button" type="button" aria-label="Toggle stroke eraser" title="Stroke eraser" aria-pressed="false">⌁</button>
               <button id="clear-button" class="icon-button" type="button" aria-label="Clear writing" title="Clear">⌫</button>
+              <label class="pen-only"><input id="pen-only" type="checkbox" /> Pen only</label>
             </div>
           </div>
 
@@ -127,7 +139,8 @@
             </div>
             <p id="inkmath-summary" class="caption"></p>
             <div id="inkmath-lines" class="inkmath-lines"></div>
-            <button id="recheck-transcription" class="secondary-button recheck-transcription hidden" type="button">Review corrected transcription</button>
+            <label class="capture-approval"><input id="ink-reviewed" type="checkbox" /> I checked every transcribed line against my writing.</label>
+            <button id="recheck-transcription" class="secondary-button recheck-transcription hidden" type="button" disabled>Submit reviewed transcription</button>
           </section>
 
           <button id="toggle-step-tools" class="toggle-step-tools" type="button" aria-expanded="false">Type a step instead</button>
@@ -213,13 +226,29 @@
         <button id="voice-stop" class="secondary-button" type="button" disabled>Stop</button>
         <button id="voice-transcribe" class="secondary-button" type="button" disabled>Transcribe</button>
       </div>
+      <label>Or select an audio file (maximum 6 MiB)<input id="voice-file" type="file" accept="audio/webm,audio/ogg,audio/mp4,audio/mpeg,audio/wav,audio/x-wav" /></label>
       <audio id="voice-playback" controls hidden></audio>
       <label for="voice-transcript">Transcript — edit anything the voice reader misunderstood</label>
       <textarea id="voice-transcript" rows="3" placeholder="Or type what you would say, for example: a squared plus b squared equals c squared"></textarea>
       <button id="voice-format" class="secondary-button voice-format" type="button" disabled>Format as maths</button>
       <div id="voice-formulas" class="voice-formulas hidden"></div>
       <label id="voice-review-label" class="voice-review hidden"><input id="voice-reviewed" type="checkbox" /> I checked the formula against what I said.</label>
+      <div class="voice-actions"><button id="voice-notebook" class="secondary-button" type="button" disabled>Review as notebook questions</button><button id="voice-download" class="secondary-button" type="button" disabled>Download maths JSON</button></div>
       <p id="voice-status" class="voice-status"></p>
+    </dialog>
+    <dialog id="capture-dialog" class="capture-dialog" aria-labelledby="capture-heading">
+      <header><div><p class="eyebrow">Capture → Review → Practise</p><h2 id="capture-heading">Your question library</h2></div><button id="capture-close" class="icon-button" type="button" aria-label="Close question library">×</button></header>
+      <p>Keep names and private information out of uploads. Extract sends a photo to Gemini; Import sends a public URL to Firecrawl. Provider fees and retention policies apply. Opening this dialog makes no paid requests.</p>
+      <fieldset id="capture-inputs"><legend class="sr-only">Choose your source</legend><div class="capture-sources">
+        <section><label>Worksheet photo · PNG, JPEG, WebP · 6 MiB<input id="capture-photo" type="file" accept="image/png,image/jpeg,image/webp" /></label><img id="capture-preview" alt="Local worksheet preview" hidden /><button id="capture-extract" class="secondary-button" type="button">Extract questions with Gemini</button></section>
+        <section><label>Public lesson URL<input id="capture-url" type="url" maxlength="2048" placeholder="https://…" /></label><button id="capture-import-url" class="secondary-button" type="button">Import with Firecrawl</button><label>Or restore reviewed notebook JSON · 256 KiB<input id="capture-file" type="file" accept="application/json,.json" /></label></section>
+      </div></fieldset>
+      <p id="capture-status" role="status" aria-live="polite"></p>
+      <p id="capture-warnings"></p>
+      <fieldset id="capture-editor"><legend>Review and edit</legend><label>Notebook title<input id="capture-title" maxlength="200" /></label><div id="capture-questions"></div><label class="capture-approval"><input id="capture-reviewed" type="checkbox" /> I checked every question, equation and diagram description against the source. This is transcription, not a correctness assessment.</label></fieldset>
+      <div class="capture-actions"><button id="capture-add" class="secondary-button" type="button">Add a question manually</button><button id="capture-save" class="secondary-button" type="button" disabled>Save reviewed notebook</button><button id="capture-download" class="secondary-button" type="button" disabled>Download reviewed JSON</button></div>
+      <details><summary>Original extracted JSON (before edits)</summary><pre id="capture-json"></pre></details>
+      <hr /><div class="capture-actions"><h3>Saved privately to your account</h3><button id="capture-refresh" class="text-button" type="button">Refresh library</button></div><p>Imported questions are not automatically graded. Use your notebook to keep working and check reasoning with a teacher.</p><div id="capture-library"></div>
     </dialog>
     <dialog id="heygen-dialog" class="heygen-dialog" aria-labelledby="heygen-heading">
       <header><div><p class="eyebrow">AI avatar · Powered by HeyGen</p><h2 id="heygen-heading">Let your coach explain it.</h2></div><button id="heygen-close" class="icon-button" type="button" aria-label="Close video creator">×</button></header>
