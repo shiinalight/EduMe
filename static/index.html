@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Math Notes</title>
+    <link rel="stylesheet" href="/app/styles.css" />
+    <link rel="stylesheet" href="/app/heygen-video.css" />
+    <link rel="stylesheet" href="/app/capture.css" />
+  </head>
+  <body>
+    <section id="auth-screen" class="auth-shell">
+      <form id="auth-form" class="auth-card">
+        <p class="eyebrow">Your personal math space</p>
+        <h1 id="auth-title">Create your learner profile</h1>
+        <p id="auth-description">This helps tailor foundations and practice to where you are learning.</p>
+        <label>Student name<input id="full-name" required minlength="2" maxlength="80" autocomplete="name" /></label>
+        <label>Email<input id="email" required type="email" autocomplete="email" /></label>
+        <label>Password<input id="password" required type="password" minlength="8" autocomplete="new-password" /></label>
+        <div id="profile-fields" class="profile-fields">
+          <label>Grade<input id="grade" required type="number" min="1" max="12" inputmode="numeric" /></label>
+          <label>Country<input id="country" required autocomplete="country-name" placeholder="e.g. United States" /></label>
+          <label>State / region<input id="state" required autocomplete="address-level1" placeholder="e.g. California" /></label>
+          <fieldset class="tutor-preference">
+            <legend>Helpful teaching approaches <span>(choose one or more)</span></legend>
+            <label><input name="tutor-mode" value="guided" type="checkbox" checked /> Guided steps</label>
+            <label><input name="tutor-mode" value="socratic" type="checkbox" /> Questions that prompt thinking</label>
+            <label><input name="tutor-mode" value="worked_example" type="checkbox" /> Parallel worked examples</label>
+            <label><input name="tutor-mode" value="visual" type="checkbox" /> Visual diagrams</label>
+          </fieldset>
+        </div>
+        <p id="auth-message" class="auth-message hidden"></p>
+        <button id="auth-submit" class="check-button" type="submit">Create profile <span>→</span></button>
+        <button id="auth-switch" class="text-button" type="button">I already have an account</button>
+      </form>
+    </section>
+
+    <main id="learning-home" class="learning-home hidden">
+      <header class="home-topbar">
+        <div class="brand-lockup"><span class="brand-mark">✦</span><span>Brighter Steps</span></div>
+        <div class="home-account"><span id="home-student-name"></span><button id="home-logout-button" class="text-button" type="button">Sign out</button></div>
+      </header>
+
+      <section id="dashboard-view" class="dashboard-view">
+        <div class="maths-simple-intro">
+          <p class="eyebrow">Mathematics · Grade <span id="home-grade">8</span></p>
+          <h1>Your maths journey</h1>
+          <p id="home-subtitle">Choose a guided topic or bring your own questions.</p>
+        </div>
+
+        <section class="capture-home" aria-labelledby="capture-home-title">
+          <p class="eyebrow">Your questions · One notebook</p>
+          <h2 id="capture-home-title">Bring your maths here.</h2>
+          <p>Import a worksheet photo, a public lesson link, spoken maths or your own text. Review it once, save it privately, and practise in the same workspace.</p>
+          <div class="capture-actions"><button id="home-capture" class="secondary-button" type="button">Open question library →</button><button id="home-voice" class="secondary-button" type="button">Speak or upload audio</button></div>
+          <p class="caption">Built-in topics have authored checking. Your imported questions use self-guided, ungraded practice.</p>
+        </section>
+
+        <section class="topic-connection" aria-labelledby="connection-title">
+          <div class="section-heading"><div><p class="eyebrow">Learn in this order</p><h2 id="connection-title">What unlocks what</h2><p class="section-caption">Each idea gives you a tool for the next one.</p></div></div>
+          <div class="connection-path">
+            <article class="connection-topic foundation-topic"><span class="connection-icon">x²</span><div><p class="connection-step">1. First</p><strong>Square numbers</strong><small>Use squares like 8² = 64 in Pythagoras.</small></div><b>52%</b></article>
+            <span class="connection-arrow" aria-hidden="true">→</span>
+            <button id="home-pythagoras-topic" class="connection-topic active-topic" type="button"><span class="connection-icon">△</span><span><p class="connection-step">2. Next</p><strong>Pythagoras’ theorem</strong><small>Use square numbers to find a missing side.</small></span><b>68%</b></button>
+            <span class="connection-arrow" aria-hidden="true">→</span>
+            <button id="home-algebra-topic" class="connection-topic active-topic" type="button"><span class="connection-icon">x=</span><span><p class="connection-step">3. Then</p><strong>Algebraic equations</strong><small>Use Pythagoras equations to practise finding an unknown.</small></span><b>76%</b></button>
+          </div>
+        </section>
+
+        <section class="topic-progress-section" aria-labelledby="topic-progress-title">
+          <div class="section-heading"><div><p class="eyebrow">Practice topics</p><h2 id="topic-progress-title">Topics you are learning</h2></div><p class="section-caption">Progress percentages below are prototype examples, not measured mastery.</p></div>
+          <div class="topic-progress-list">
+            <article class="topic-progress-row"><span class="progress-topic-icon square-icon">x²</span><div><strong>Square numbers &amp; roots</strong><small>This helps with Pythagoras.</small><span class="topic-progress-track"><i style="width:52%"></i></span></div><b>52%</b></article>
+            <button id="start-pythagoras-button" class="topic-progress-row current-progress" type="button"><span class="progress-topic-icon triangle-icon">△</span><span><strong>Pythagoras’ theorem</strong><small>Ready for your next practice.</small><span class="topic-progress-track"><i style="width:68%"></i></span></span><b>68% <em>Practise →</em></b></button>
+            <button id="start-algebra-button" class="topic-progress-row" type="button"><span class="progress-topic-icon equation-icon">x=</span><span><strong>Algebraic equations</strong><small>Keep both sides balanced as you solve.</small><span class="topic-progress-track"><i style="width:76%"></i></span></span><b>76% <em>Practise →</em></b></button>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <main id="learning-app" class="app-shell hidden">
+      <header class="topbar">
+        <div>
+          <p id="practice-topic-label" class="eyebrow">Geometry concept</p>
+          <h1 id="practice-title">Pythagoras’ theorem</h1>
+        </div>
+        <div class="student-menu">
+          <button id="back-to-topics" class="text-button" type="button">← Mathematics</button>
+          <div class="practice-meta" aria-hidden="true"><span id="connection-label">Ready</span><span id="student-summary"></span><button id="logout-button" type="button">Sign out</button></div>
+        </div>
+      </header>
+
+      <section id="practice-workspace" class="workspace coach-hidden" aria-label="Math notebook">
+        <article class="notebook-card">
+          <div class="problem-strip">
+            <span class="problem-number">01</span>
+            <div class="problem-copy"><p class="problem-label">Today’s problem</p><p id="problem-prompt">Choose a practice problem to begin.</p><p id="problem-goal" class="problem-goal"></p><p id="upload-status" class="upload-status hidden"></p></div>
+            <div class="problem-actions"><button id="upload-problem-button" class="upload-problem-button" type="button">↑ Question library</button><button id="new-problem-button" class="new-problem-button" type="button">↻ New problem</button><button id="download-work" class="new-problem-button" type="button">↓ Work JSON</button></div>
+          </div>
+
+          <section id="visual-board" class="visual-board hidden" aria-label="Pythagoras visual support">
+            <div><p class="eyebrow">Look at the triangle</p><p id="visual-cue">The visual cue will appear here when it can help.</p></div>
+            <svg viewBox="0 0 220 130" role="img" aria-label="Right triangle labelled a, b and c">
+              <path d="M25 105 L25 28 L185 105 Z" fill="#eef0ff" stroke="#6366f1" stroke-width="3" />
+              <path d="M25 88 L42 88 L42 105" fill="none" stroke="#6366f1" stroke-width="3" />
+              <text x="10" y="70" fill="#4548c8" font-size="18" font-weight="700">b</text>
+              <text x="99" y="123" fill="#4548c8" font-size="18" font-weight="700">a</text>
+              <text x="112" y="58" fill="#4548c8" font-size="18" font-weight="700">c</text>
+            </svg>
+          </section>
+
+          <div class="notebook-heading">
+            <div>
+              <h2>Your working</h2>
+              <p>Write with Apple Pencil or your finger.</p>
+            </div>
+            <div class="tool-buttons" aria-label="Drawing tools">
+              <button id="undo-button" class="icon-button" type="button" aria-label="Undo last stroke" title="Undo">↶</button>
+              <button id="redo-button" class="icon-button" type="button" aria-label="Redo last drawing action" title="Redo">↷</button>
+              <button id="eraser-button" class="icon-button" type="button" aria-label="Toggle stroke eraser" title="Stroke eraser" aria-pressed="false">⌁</button>
+              <button id="clear-button" class="icon-button" type="button" aria-label="Clear writing" title="Clear">⌫</button>
+              <label class="pen-only"><input id="pen-only" type="checkbox" /> Pen only</label>
+            </div>
+          </div>
+
+          <div class="canvas-wrap">
+            <canvas id="writing-pad" aria-label="Handwriting canvas"></canvas>
+            <p id="canvas-placeholder">Write an equation here</p>
+            <div id="error-markers" class="error-markers" aria-hidden="true"></div>
+          </div>
+
+          <section id="inkmath-transcript" class="inkmath-transcript hidden" aria-live="polite">
+            <div class="inkmath-heading">
+              <div>
+                <p class="eyebrow">Handwriting transcription</p>
+                <strong id="inkmath-title">InkMath is reading your work</strong>
+              </div>
+              <span id="inkmath-badge" class="inkmath-badge">InkMath</span>
+            </div>
+            <p id="inkmath-summary" class="caption"></p>
+            <div id="inkmath-lines" class="inkmath-lines"></div>
+            <label class="capture-approval"><input id="ink-reviewed" type="checkbox" /> I checked every transcribed line against my writing.</label>
+            <button id="recheck-transcription" class="secondary-button recheck-transcription hidden" type="button" disabled>Submit reviewed transcription</button>
+          </section>
+
+          <button id="toggle-step-tools" class="toggle-step-tools" type="button" aria-expanded="false">Type a step instead</button>
+          <div id="manual-step-tools" class="recognition-panel hidden">
+            <div class="recognition-heading">
+              <div>
+                <p class="eyebrow">Current step</p>
+                <p class="caption">Enter the equation for the line you want feedback on.</p>
+              </div>
+              <label class="ocr-picker">OCR engine
+                <select id="ocr-provider" aria-label="Handwriting recognition engine"></select>
+              </label>
+            </div>
+            <label class="sr-only" for="latex-input">Equation for current step</label>
+            <textarea id="latex-input" rows="2" spellcheck="false" placeholder="Example: a^2 + b^2 = c^2"></textarea>
+            <div class="sample-row" aria-label="Sample equations">
+              <span>Try a sample:</span>
+              <button type="button" class="sample-button" data-latex="a^2 + b^2 = c^2">Correct</button>
+              <button type="button" class="sample-button" data-latex="a + b^2 = c^2">Missing square</button>
+              <button type="button" class="sample-button" data-latex="a^2 - b^2 = c^2">Sign error</button>
+            </div>
+            <button id="voice-formula-button" class="voice-formula-button" type="button">🎙 Speak a formula</button>
+          </div>
+
+          <div class="solution-actions">
+            <button id="check-button" class="check-button hidden" type="button">Check this step <span>→</span></button>
+            <button id="review-button" class="review-button" type="button">Review full solution</button>
+          </div>
+        </article>
+
+        <aside id="coach-card" class="coach-card hidden" aria-live="polite">
+          <div class="coach-heading"><span class="coach-mark">✦</span><span>Math coach</span></div>
+          <button id="heygen-open" class="heygen-launch" type="button" disabled>▶ Turn coach guidance into a video</button>
+          <div id="feedback-empty" class="feedback-empty">
+            <h2>Let’s check your thinking</h2>
+            <p>After each line, you’ll get a small hint connected to the idea you are using—not just an answer.</p>
+          </div>
+          <div id="feedback-result" class="feedback-result hidden">
+            <p id="result-label" class="result-label"></p>
+            <h2 id="result-title"></h2>
+            <p id="result-hint"></p>
+            <div id="review-findings" class="review-findings"></div>
+            <div id="foundation-card" class="concept-card">
+              <p class="eyebrow">Foundation</p>
+              <strong id="foundation-name">Pythagoras’ theorem</strong>
+              <p id="foundation-description">For a right triangle: <i>a</i>² + <i>b</i>² = <i>c</i>², where <i>c</i> is the hypotenuse.</p>
+              <button id="foundation-link" class="foundation-link" type="button">See how it works →</button>
+            </div>
+          </div>
+          <section id="tutor-guidance" class="tutor-guidance hidden">
+            <p id="tutor-mode" class="tutor-mode">Guided</p>
+            <p id="tutor-prompt">We’ll take one small step at a time.</p>
+            <div id="worked-example" class="worked-example hidden">
+              <strong id="worked-title"></strong>
+              <ol id="worked-steps"></ol>
+              <p id="worked-handoff"></p>
+            </div>
+          </section>
+          <p id="ocr-message" class="ocr-message hidden"></p>
+        </aside>
+      </section>
+    </main>
+    <dialog id="foundation-modal" class="foundation-modal">
+      <button id="close-foundation" class="icon-button modal-close" type="button" aria-label="Close foundation lesson">×</button>
+      <p class="eyebrow">Foundation lesson</p>
+      <h2>Pythagoras’ theorem</h2>
+      <p>In a right triangle, the hypotenuse is the side opposite the right angle. The area of the square on that side equals the combined areas of the squares on the two shorter sides.</p>
+      <div class="formula-panel"><i>a</i>² + <i>b</i>² = <i>c</i>²</div>
+      <ol>
+        <li>Identify the hypotenuse as <i>c</i>.</li>
+        <li>Square each side length.</li>
+        <li>Add the two shorter-side squares, then solve for <i>c</i>.</li>
+      </ol>
+      <p class="modal-note">For a 3–4–5 triangle: 3² + 4² = 9 + 16 = 25, so <i>c</i> = 5.</p>
+    </dialog>
+    <dialog id="voice-dialog" class="voice-dialog">
+      <button id="close-voice" class="icon-button modal-close" type="button" aria-label="Close voice formula">×</button>
+      <p class="eyebrow">Speak a formula</p>
+      <h2>Say it, then check it</h2>
+      <p>We turn your words into maths notation, but we never solve or correct it for you.</p>
+      <div class="voice-actions">
+        <button id="voice-record" class="secondary-button" type="button">Start recording</button>
+        <button id="voice-stop" class="secondary-button" type="button" disabled>Stop</button>
+        <button id="voice-transcribe" class="secondary-button" type="button" disabled>Transcribe</button>
+      </div>
+      <label>Or select an audio file (maximum 6 MiB)<input id="voice-file" type="file" accept="audio/webm,audio/ogg,audio/mp4,audio/mpeg,audio/wav,audio/x-wav" /></label>
+      <audio id="voice-playback" controls hidden></audio>
+      <label for="voice-transcript">Transcript — edit anything the voice reader misunderstood</label>
+      <textarea id="voice-transcript" rows="3" placeholder="Or type what you would say, for example: a squared plus b squared equals c squared"></textarea>
+      <button id="voice-format" class="secondary-button voice-format" type="button" disabled>Format as maths</button>
+      <div id="voice-formulas" class="voice-formulas hidden"></div>
+      <label id="voice-review-label" class="voice-review hidden"><input id="voice-reviewed" type="checkbox" /> I checked the formula against what I said.</label>
+      <div class="voice-actions"><button id="voice-notebook" class="secondary-button" type="button" disabled>Review as notebook questions</button><button id="voice-download" class="secondary-button" type="button" disabled>Download maths JSON</button></div>
+      <p id="voice-status" class="voice-status"></p>
+    </dialog>
+    <dialog id="capture-dialog" class="capture-dialog" aria-labelledby="capture-heading">
+      <header><div><p class="eyebrow">Capture → Review → Practise</p><h2 id="capture-heading">Your question library</h2></div><button id="capture-close" class="icon-button" type="button" aria-label="Close question library">×</button></header>
+      <p>Keep names and private information out of uploads. Extract sends a photo to Gemini; Import sends a public URL to Firecrawl. Provider fees and retention policies apply. Opening this dialog makes no paid requests.</p>
+      <fieldset id="capture-inputs"><legend class="sr-only">Choose your source</legend><div class="capture-sources">
+        <section><label>Worksheet photo · PNG, JPEG, WebP · 6 MiB<input id="capture-photo" type="file" accept="image/png,image/jpeg,image/webp" /></label><img id="capture-preview" alt="Local worksheet preview" hidden /><button id="capture-extract" class="secondary-button" type="button">Extract questions with Gemini</button></section>
+        <section><label>Public lesson URL<input id="capture-url" type="url" maxlength="2048" placeholder="https://…" /></label><button id="capture-import-url" class="secondary-button" type="button">Import with Firecrawl</button><label>Or restore reviewed notebook JSON · 256 KiB<input id="capture-file" type="file" accept="application/json,.json" /></label></section>
+      </div></fieldset>
+      <p id="capture-status" role="status" aria-live="polite"></p>
+      <p id="capture-warnings"></p>
+      <fieldset id="capture-editor"><legend>Review and edit</legend><label>Notebook title<input id="capture-title" maxlength="200" /></label><div id="capture-questions"></div><label class="capture-approval"><input id="capture-reviewed" type="checkbox" /> I checked every question, equation and diagram description against the source. This is transcription, not a correctness assessment.</label></fieldset>
+      <div class="capture-actions"><button id="capture-add" class="secondary-button" type="button">Add a question manually</button><button id="capture-save" class="secondary-button" type="button" disabled>Save reviewed notebook</button><button id="capture-download" class="secondary-button" type="button" disabled>Download reviewed JSON</button></div>
+      <details><summary>Original extracted JSON (before edits)</summary><pre id="capture-json"></pre></details>
+      <hr /><div class="capture-actions"><h3>Saved privately to your account</h3><button id="capture-refresh" class="text-button" type="button">Refresh library</button></div><p>Imported questions are not automatically graded. Use your notebook to keep working and check reasoning with a teacher.</p><div id="capture-library"></div>
+    </dialog>
+    <dialog id="heygen-dialog" class="heygen-dialog" aria-labelledby="heygen-heading">
+      <header><div><p class="eyebrow">AI avatar · Powered by HeyGen</p><h2 id="heygen-heading">Let your coach explain it.</h2></div><button id="heygen-close" class="icon-button" type="button" aria-label="Close video creator">×</button></header>
+      <p class="heygen-muted">Review the assistant's latest guidance as a spoken script. This creates an avatar narration, not a generated mathematical diagram. Rewrite formulas in spoken words and remove any personal information.</p>
+      <label for="heygen-script">Narration script</label><textarea id="heygen-script" rows="7" maxlength="4000" spellcheck="true"></textarea><small id="heygen-count" class="heygen-muted"></small>
+      <div class="heygen-actions"><button id="heygen-load-avatars" type="button">Load public avatars</button><button id="heygen-more-avatars" type="button" disabled>More avatars</button></div>
+      <label for="heygen-avatar">Avatar</label><select id="heygen-avatar"><option value="">Load avatars to choose a presenter</option></select>
+      <details><summary>Voice override (optional)</summary><label for="heygen-voice">HeyGen voice ID—not your ElevenLabs key</label><input id="heygen-voice" type="text" maxlength="200" placeholder="Leave empty for the avatar's default voice" autocomplete="off" /></details>
+      <label class="heygen-consent"><input id="heygen-consent" type="checkbox" /> I reviewed this script and agree to send it to HeyGen and use API credits to generate an AI-avatar video.</label>
+      <div class="heygen-actions"><button id="heygen-generate" class="heygen-primary" type="button" disabled>Generate video · uses credits</button><button id="heygen-refresh" type="button" disabled>Check status</button><button id="heygen-new-draft" type="button">New draft</button></div>
+      <p id="heygen-status" class="heygen-status" role="status" aria-live="polite">Loading video setup…</p><p id="heygen-job-id" class="heygen-job-id"></p>
+      <video id="heygen-player" controls playsinline preload="metadata" hidden></video><a id="heygen-download" class="heygen-download" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" hidden>Open / save video ↗</a>
+      <p class="heygen-muted">720p landscape · Generated only when you click · Rendering can take several minutes. Closing pauses status checks, not the paid generation. Provider retention policies apply. Keep the script free of learner names and identifiers.</p>
+      <details><summary>Recent videos for this practice session</summary><div id="heygen-history" class="heygen-history"></div></details>
+    </dialog>
+    <script type="module" src="/app/app.js"></script>
+  </body>
+</html>

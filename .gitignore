@@ -1,5 +1,6 @@
+.venv/
 .env
-node_modules/
-.DS_Store
-*.log
-.sites-runtime/
+student_data.db
+.pytest_cache/
+__pycache__/
+*.py[cod]
