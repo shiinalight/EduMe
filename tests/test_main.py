@@ -70,7 +70,8 @@ def test_default_ocr_provider_is_local_unless_configured(monkeypatch):
 def test_recognizer_explains_when_no_provider_is_configured(monkeypatch):
     monkeypatch.delenv("OCR_SERVICE_URL", raising=False)
     monkeypatch.setenv("PIX2TEX_URL", "http://127.0.0.1:9/predict/")
-    response = client.post(
+    learner = authenticated_ocr_client()
+    response = learner.post(
         "/recognize-handwriting",
         json={"imageData": "data:image/png;base64," + "A" * 30, "sessionId": "abc123", "stepIndex": 0},
     )
@@ -80,7 +81,8 @@ def test_recognizer_explains_when_no_provider_is_configured(monkeypatch):
 def test_team_recognizer_requires_its_own_configuration(monkeypatch):
     monkeypatch.delenv("TEAM_OCR_URL", raising=False)
     monkeypatch.delenv("OCR_SERVICE_URL", raising=False)
-    response = client.post(
+    learner = authenticated_ocr_client()
+    response = learner.post(
         "/recognize-handwriting",
         json={
             "imageData": "data:image/png;base64," + "QUFBQQ==",
@@ -91,6 +93,16 @@ def test_team_recognizer_requires_its_own_configuration(monkeypatch):
     )
     assert response.status_code == 503
     assert "TEAM_OCR_URL" in response.json()["detail"]
+
+
+def authenticated_ocr_client():
+    learner = TestClient(app)
+    response = learner.post("/auth/register", json={
+        "fullName": "OCR Student", "email": f"ocr-{secrets.token_hex(6)}@example.test",
+        "password": "safe-practice-password", "grade": 8, "country": "United States", "state": "Oregon",
+    })
+    assert response.status_code == 201
+    return learner
 
 
 def test_student_profile_generates_and_checks_a_persisted_learning_session():
