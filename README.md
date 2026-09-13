@@ -1,4 +1,4 @@
-# Brighter Steps
+# EduMe
 
 **A single FastAPI app that turns handwriting, speech, and worksheet photos into a private, reviewed math tutoring session — no separate services, no duplicate accounts, nothing invented by the AI.**
 
