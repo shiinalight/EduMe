@@ -1,10 +1,21 @@
-# Math Step Detection Service
+# Brighter Steps — Unified Math Platform
 
-A small FastAPI service that evaluates OCR-recognized mathematics deterministically with SymPy. It currently supports `pythagoras_01` and is designed to accept additional problem definitions in `main.py` without changing the endpoint logic.
+One FastAPI application, one learner account and one private SQLite database. This branch integrates the latest `full-stack-setup`, the input workflows from `photo-to-json-handwriting-to-latex`, and `feature/heygen-assistant-video` without running duplicate Node and Python applications. The original branches remain separate.
+
+## Integrated workflows
+
+- **Guided learning:** Pythagoras and algebraic-equation sessions, deterministic SymPy step checking, saved attempts, adaptive authored guidance, optional Gemini explanations, and reviewed HeyGen narration.
+- **Question library:** open it from the dashboard or practice screen. Upload a worksheet photo (Gemini), import a public lesson URL (Firecrawl), type questions, or restore notebook JSON. Edit question text, LaTeX, diagram descriptions and ambiguities, then explicitly confirm before saving. Remove questions you do not want to keep. Pages without exercises remain source context; no questions or answers are invented.
+- **Voice:** record up to 60 seconds or upload audio, explicitly transcribe with ElevenLabs, edit the transcript, format with Gemini, then review editable formulas. Use one formula as the current practice step or send all formulas to the shared question-review screen. Audio never enters notebook exports or the local database.
+- **Handwriting:** one touch/stylus canvas with undo/redo, whole-stroke eraser, pen-only mode, pressure and resize-safe coordinates. **Read handwriting** only transcribes. Edit the result, check the review checkbox, then **Submit reviewed transcription** to check built-in work or save imported work.
+- **Private notebooks:** reviewed questions persist under the signed-in learner. Select a saved question to practise it in the same workspace; other learners cannot access its notebook or session.
+- **Portable JSON:** download reviewed notebook questions and reload them for a fresh review. **Work JSON** exports the current problem, acknowledged submissions, current ink and typed draft without learner-profile data or grading claims. Imported-question history includes all saved steps; built-in-topic exports include submissions acknowledged in the current page. Original InkMath `student_work_updated` JSON can import its selected question. Imports intentionally do not restore old ownership, approval, student steps, ink or grading.
+
+**Important:** arbitrary imported questions use **self-guided, ungraded practice**. Their steps are saved, not checked against a random Pythagoras/algebra answer. The coach makes no correctness/completion claims for these questions. Verify reasoning with a teacher or trusted solution. Diagram descriptions are transcribed text, not reconstructed images. Dashboard percentages are labelled prototype examples, not measured mastery.
 
 ## Setup
 
-Use Python 3.10 or newer, then create and activate a virtual environment and install the dependencies:
+Use Python **3.11 or newer** (validated with 3.13), then create and activate a virtual environment and install the dependencies:
 
 ```bash
 python3 -m venv .venv
@@ -12,29 +23,33 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Run the service:
+For a new installation only, copy the empty placeholders in `.env.example` to a local `.env`. Keep an existing `.env`; do not overwrite its keys. All providers are optional: manual questions and built-in practice work without paid keys. Set `GEMINI_API_KEY` for direct photo/handwriting recognition and spoken-math formatting, `ELEVENLABS_API_KEY` with Speech-to-Text access for audio, `FIRECRAWL_API_KEY` for URLs, and `HEYGEN_API_KEY` for avatar videos. Save and restart after changing environment values. Keys stay server-side.
+
+Run the service (or select the VS Code task **Run unified platform (8001)**):
 
 ```bash
-uvicorn main:app --reload
+uvicorn main:app --reload --env-file .env --host 127.0.0.1 --port 8001
 ```
 
-Open <http://127.0.0.1:8000/> to confirm the service is running, or use the
-interactive API form at <http://127.0.0.1:8000/docs>. The equation checker is
+Open **<http://127.0.0.1:8001/app/>** for the complete platform. Use <http://127.0.0.1:8001/> to confirm the service is running, or the
+interactive API form at <http://127.0.0.1:8001/docs>. The equation checker is
 a `POST` endpoint at `/check-step`, so it cannot be tested by simply opening
 that URL in a browser.
 
+No Node server or port 3000 is needed. Leave `INKMATH_OCR_URL` empty/unset for direct Python recognition; an existing explicit value still opts into the legacy external service. Optional Pix2Tex/Team OCR remain selectable alternatives, not additional required apps. Node is only needed to run JavaScript tests. Microphone access requires localhost or HTTPS. PDF/HEIC extraction is not supported; use PNG, JPEG or WebP up to 6 MiB.
+
 ## Optional HeyGen coach videos
 
-This feature is isolated on `feature/heygen-assistant-video`, based on `full-stack-setup`. It narrates the assistant's existing authored guidance; it does not change the math checker or tutoring policy, generate new lesson content, or render mathematical diagrams.
+Originally developed on `feature/heygen-assistant-video`, this feature is now included in the unified platform. It narrates the assistant's existing guidance; it does not change the math checker or tutoring policy, generate new lesson content, or render mathematical diagrams.
 
 1. Add `HEYGEN_API_KEY` to your **existing** local `.env`, save it, and restart the Python server with the environment file loaded. Do not overwrite your other keys or paste credentials into chat.
-2. Use `uvicorn main:app --reload --env-file .env --host 127.0.0.1 --port 8000`, then open <http://127.0.0.1:8000/app/>. This is the Python assistant, not the separate InkMath service on port 3000.
+2. Start the unified app as above, then open <http://127.0.0.1:8001/app/>.
 3. Sign in or create a learner profile, open a practice topic, and choose **Turn coach guidance into a video**. The script is populated from the latest tutor prompt, worked example and visual cue (when present).
 4. Review the script (maximum 4,000 characters). Write mathematical symbols as spoken words for accurate pronunciation. Remove names, emails, or other personal details. Load public avatars and select a presenter; its default voice is used. `HEYGEN_AVATAR_ID` and `HEYGEN_VOICE_ID` are optional server-side defaults, not additional API keys.
 5. Confirm the script and credit-use checkbox, then select **Generate video**. This sends the script to HeyGen, uses API credits, and requests a 720p landscape avatar video. The website subscription and API billing may differ. Your API key needs access to video creation/status and avatar listing.
 6. Status checks run every eight seconds for up to ten minutes while the dialog is open. Use **Check status** to resume, or reopen the dialog for recent jobs in this practice session. When complete, play the video or open/save it using the delivery link. Check status again if the signed link expires.
 
-The included VS Code task **Run assistant with HeyGen (8001)** uses your selected Python interpreter and serves <http://127.0.0.1:8001/app/> so an existing service on port 8000 can stay running. Stop and restart the task after saving API-key changes; the environment file is loaded at process startup.
+The included VS Code task **Run unified platform (8001)** uses your selected Python interpreter and serves <http://127.0.0.1:8001/app/> so an existing service on port 8000 can stay running. Stop and restart the task after saving API-key changes; the environment file is loaded at process startup.
 
 **Cost and privacy safeguards:** no generation on page load, guidance updates, or avatar selection; explicit review required on every new draft. Submissions use a stable HeyGen `Idempotency-Key` and a local uniqueness check, so a retry of the same unchanged draft reuses the request. Do not start a new draft to retry a timeout: a paid generation may already exist. Safe retries stop after 23 hours (HeyGen's documented window is 24 hours). At most three active/unconfirmed jobs per learner are allowed in a rolling day. Closing the dialog pauses polling but does **not** cancel a render already submitted to HeyGen. After a browser reload, an unconfirmed submission must be checked in HeyGen's dashboard before creating another video.
 
@@ -46,10 +61,8 @@ Official API references: [Create video](https://developers.heygen.com/reference/
 
 ## Tablet notebook and pluggable OCR
 
-Open <http://127.0.0.1:8000/app/> on an iPad (or any touch-enabled browser).
-The writing area supports Apple Pencil, touch, undo, and clear. Use a sample
-equation to test the full feedback flow right away, or type the LaTeX returned
-by your OCR system into the **Recognized equation** field.
+Open <http://127.0.0.1:8001/app/> on an iPad (or any touch-enabled browser).
+The writing area supports Apple Pencil, touch, undo/redo, erasing, and clear. Use **Type a step instead** to enter LaTeX or speak a formula.
 
 The project includes a self-hosted handwriting-maths OCR service based on
 [Pix2Tex / LaTeX-OCR](https://github.com/lukas-blecher/LaTeX-OCR). Start it
@@ -61,13 +74,11 @@ docker compose up ocr
 
 Then start this FastAPI app in a second terminal as usual. The first model
 startup may take a while because its model checkpoint is loaded locally. No API
-token is required. The notebook's **Recognize writing** button sends a PNG of
-the canvas to the local service, receives LaTeX, and places it in the review
-field; use **Check this step** to get the concept feedback.
+token is required. With Pix2Tex selected, **Read handwriting** sends canvas PNG crops to the local service and places its LaTeX in the review field. Confirm the transcription before submitting; OCR alone never saves or grades a step.
 
 The notebook includes an **OCR provider** toggle. Choose **Local Pix2Tex** for
 the included local model, or choose **Team OCR** after configuring your
-teammate's service. Copy `.env.example` to `.env`, set `TEAM_OCR_URL`, then
+teammate's service. Add `TEAM_OCR_URL` to your existing local `.env`, then
 start Uvicorn with:
 
 ```bash
@@ -112,36 +123,24 @@ this FastAPI service instead of cherry-picked as a disconnected second app.
   problems from one public lesson URL. Private, local, IP-address, and custom
   port URLs are rejected. Returned items are also marked for review.
 
-Copy `.env.example` to `.env` and add only the keys you have authority to use.
+For a new installation, use `.env.example`; otherwise preserve the existing `.env` and add only the keys you have authority to use.
 Keys stay server-side and must never be added to browser code or committed.
 
 ## Student learning flow
 
 The first visit to `/app/` now begins with a learner profile. The local app
-stores a name, email, password, grade, country, and state/region in
+stores a name, email, salted password hash, grade, country, and state/region in
 `student_data.db` (which is excluded from Git). After signing in, it:
 
 1. Selects a starter curriculum context from the grade and location profile.
-2. Creates one right-triangle problem using a Pythagorean triple.
+2. Creates a right-triangle or algebraic-equation problem for the chosen topic, or opens a reviewed imported question.
 3. Keeps the student's submitted lines in a private practice session.
 4. Accepts the foundation equation, the numerical substitution/simplification,
    or a direct valid solution for `c`.
 5. Explains a recognisable misconception, such as a missing square, in terms of
    the Pythagorean foundation instead of merely marking the answer incorrect.
 
-The tablet presents two review actions: **Check this step** evaluates the
-current equation, while **Review full solution** summarises every flagged
-attempt in that practice session and connects it back to the foundation lesson.
-When handwriting is present, **Review full solution** silently separates the
-canvas into written lines, sends each line to the server-configured default OCR
-provider, then checks those returned equations in order before displaying the
-review. It now defaults to the local teammate project **InkMath** at
-`http://127.0.0.1:3000/api/recognize`. In
-`/Users/demonslayer/Documents/Projects/EduMe-main`, add `GEMINI_API_KEY` to its
-own `.env` and run `npm start`; then start this app with its `.env` file using
-`uvicorn main:app --reload --env-file .env`. Set
-`DEFAULT_OCR_PROVIDER=team-ocr` to use a different connected provider, or
-`local-pix2tex` to use Pix2Tex.
+**Check this step** evaluates a typed equation for authored topics; **Save this step** records imported-question work without grading. With an empty canvas, **Review saved work** shows the current session's review/history. With ink present, **Read handwriting** transcribes using the chosen OCR engine; only a separate explicit review submits those lines. InkMath defaults to Gemini directly inside Python. Set `DEFAULT_OCR_PROVIDER=team-ocr` or `local-pix2tex` to choose another configured adapter.
 
 ## Adaptive tutoring strategies
 
@@ -169,11 +168,18 @@ Passwords are salted and hashed; for a deployed product, use HTTPS, secure
 cookies, rate limiting, password-reset/email verification, and a managed
 database.
 
-Run the test suite:
+## Validation and limits
+
+Run the offline test suites:
 
 ```bash
 pytest
+node --test tests/*.test.mjs
 ```
+
+Backend tests use a temporary SQLite database before importing the app and block unmocked outbound connections. They cover provider schemas/errors/size limits, authentication/origin checks, reviewed notebooks, ungraded imported sessions, authored tutor regressions and HeyGen ownership/idempotency. JavaScript tests cover drawing, review consent, stale session/network/microphone callbacks, source imports and media cleanup. Tests do **not** perform paid live provider calls; configured-account access, API billing, real microphone/stylus behavior and avatar rendering still need manual verification.
+
+New private routes reject cross-origin browser requests and bound request/provider bodies. Capture limits are per Python process, not deployment-wide quotas. Raw photos/audio are not stored; reviewed question text, attempts and HeyGen job metadata are stored in the ignored local SQLite database. Explicit provider actions can cost credits even if a dialog closes before the response arrives. This remains a local prototype: production needs trusted-host/proxy configuration, HTTPS/secure cookies, account recovery, abuse/rate limits, data-retention controls and a managed database.
 
 ## Manual request
 
