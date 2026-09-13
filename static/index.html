@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Math Notes</title>
     <link rel="stylesheet" href="/app/styles.css" />
+    <link rel="stylesheet" href="/app/heygen-video.css" />
   </head>
   <body>
     <section id="auth-screen" class="auth-shell">
@@ -159,6 +160,7 @@
 
         <aside id="coach-card" class="coach-card hidden" aria-live="polite">
           <div class="coach-heading"><span class="coach-mark">✦</span><span>Math coach</span></div>
+          <button id="heygen-open" class="heygen-launch" type="button" disabled>▶ Turn coach guidance into a video</button>
           <div id="feedback-empty" class="feedback-empty">
             <h2>Let’s check your thinking</h2>
             <p>After each line, you’ll get a small hint connected to the idea you are using—not just an answer.</p>
@@ -219,6 +221,20 @@
       <label id="voice-review-label" class="voice-review hidden"><input id="voice-reviewed" type="checkbox" /> I checked the formula against what I said.</label>
       <p id="voice-status" class="voice-status"></p>
     </dialog>
-    <script src="/app/app.js"></script>
+    <dialog id="heygen-dialog" class="heygen-dialog" aria-labelledby="heygen-heading">
+      <header><div><p class="eyebrow">AI avatar · Powered by HeyGen</p><h2 id="heygen-heading">Let your coach explain it.</h2></div><button id="heygen-close" class="icon-button" type="button" aria-label="Close video creator">×</button></header>
+      <p class="heygen-muted">Review the assistant's latest guidance as a spoken script. This creates an avatar narration, not a generated mathematical diagram. Rewrite formulas in spoken words and remove any personal information.</p>
+      <label for="heygen-script">Narration script</label><textarea id="heygen-script" rows="7" maxlength="4000" spellcheck="true"></textarea><small id="heygen-count" class="heygen-muted"></small>
+      <div class="heygen-actions"><button id="heygen-load-avatars" type="button">Load public avatars</button><button id="heygen-more-avatars" type="button" disabled>More avatars</button></div>
+      <label for="heygen-avatar">Avatar</label><select id="heygen-avatar"><option value="">Load avatars to choose a presenter</option></select>
+      <details><summary>Voice override (optional)</summary><label for="heygen-voice">HeyGen voice ID—not your ElevenLabs key</label><input id="heygen-voice" type="text" maxlength="200" placeholder="Leave empty for the avatar's default voice" autocomplete="off" /></details>
+      <label class="heygen-consent"><input id="heygen-consent" type="checkbox" /> I reviewed this script and agree to send it to HeyGen and use API credits to generate an AI-avatar video.</label>
+      <div class="heygen-actions"><button id="heygen-generate" class="heygen-primary" type="button" disabled>Generate video · uses credits</button><button id="heygen-refresh" type="button" disabled>Check status</button><button id="heygen-new-draft" type="button">New draft</button></div>
+      <p id="heygen-status" class="heygen-status" role="status" aria-live="polite">Loading video setup…</p><p id="heygen-job-id" class="heygen-job-id"></p>
+      <video id="heygen-player" controls playsinline preload="metadata" hidden></video><a id="heygen-download" class="heygen-download" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" hidden>Open / save video ↗</a>
+      <p class="heygen-muted">720p landscape · Generated only when you click · Rendering can take several minutes. Closing pauses status checks, not the paid generation. Provider retention policies apply. Keep the script free of learner names and identifiers.</p>
+      <details><summary>Recent videos for this practice session</summary><div id="heygen-history" class="heygen-history"></div></details>
+    </dialog>
+    <script type="module" src="/app/app.js"></script>
   </body>
 </html>
