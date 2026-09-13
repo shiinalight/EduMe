@@ -131,8 +131,23 @@ class WorksheetDocument(StrictModel):
     warnings: TextList
 
 
-HANDWRITING_SCHEMA = HandwritingDocument.model_json_schema()
-WORKSHEET_SCHEMA = WorksheetDocument.model_json_schema()
+def _gemini_response_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """Drop "maxItems" for the schema hint sent as responseJsonSchema.
+
+    Gemini rejects the request with 400 INVALID_ARGUMENT when an array of
+    $ref objects and a maxItems-constrained array nested inside those objects
+    both carry "maxItems". The real limits are still enforced locally by the
+    strict pydantic models when a response comes back, so this is only a hint.
+    """
+    if isinstance(schema, dict):
+        return {key: _gemini_response_schema(value) for key, value in schema.items() if key != "maxItems"}
+    if isinstance(schema, list):
+        return [_gemini_response_schema(item) for item in schema]
+    return schema
+
+
+HANDWRITING_SCHEMA = _gemini_response_schema(HandwritingDocument.model_json_schema())
+WORKSHEET_SCHEMA = _gemini_response_schema(WorksheetDocument.model_json_schema())
 
 
 def parse_image(image_data: str) -> dict[str, str]:

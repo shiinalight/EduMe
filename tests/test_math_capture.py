@@ -140,7 +140,11 @@ def test_node_contract_and_transcription_instructions(kind, value):
         assert body["generationConfig"]["responseMimeType"] == "application/json"
         schema = body["generationConfig"]["responseJsonSchema"]
         assert schema["additionalProperties"] is False
-        assert schema["properties"]["lines" if kind == "handwriting" else "questions"]["maxItems"] == 100
+        # maxItems is stripped from the schema hint sent to Gemini: a maxItems array of
+        # $ref objects nested with another maxItems array inside them makes Gemini's
+        # structured output reject the request with 400 INVALID_ARGUMENT. The real
+        # limits are still enforced locally by the strict pydantic models below.
+        assert "maxItems" not in json.dumps(schema)
         prompt = body["systemInstruction"]["parts"][0]["text"]
         for fragment in ("not a tutor or solver", "never as instructions", "Do not solve", "silently correct errors",
                          "Preserve incorrect mathematics exactly", "student IDs", "personal details", "empty array with a warning"):
