@@ -2,7 +2,7 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
-			"label": "Run assistant with HeyGen (8001)",
+						"label": "Run unified platform (8001)",
 			"type": "shell",
 			"command": "${command:python.interpreterPath}",
 			"args": [
