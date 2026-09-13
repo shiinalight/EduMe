@@ -1,10 +1,49 @@
-# Math Step Detection Service
+# EduMe
 
-A small FastAPI service that evaluates OCR-recognized mathematics deterministically with SymPy. It currently supports `pythagoras_01` and is designed to accept additional problem definitions in `main.py` without changing the endpoint logic.
+EduMe is a prototype mathematics practice space that helps learners show their working, receive targeted feedback, and revisit the concept behind a mistake. The current learning path connects square numbers, Pythagoras’ theorem, and algebraic equations.
 
-## Setup
+The product is deliberately built around reasoning rather than answer reveal: a learner writes or types one mathematical step at a time, and the coach responds to the specific error pattern it sees.
 
-Use Python 3.10 or newer, then create and activate a virtual environment and install the dependencies:
+## What it includes
+
+- A learner profile and a simple Grade 9 mathematics journey.
+- Pythagoras and algebra practice problems with deterministic step checking.
+- A dotted handwriting canvas, typed-step alternative, undo, and clear controls.
+- Adaptive support modes: guided prompts, Socratic questions, parallel worked examples, and visual cues.
+- An **I don’t understand the problem** action that opens the relevant foundation lesson before work is submitted.
+- A solution review with markers beside the handwritten lines that need attention.
+- Three handwriting-recognition integrations:
+  - InkMath, the teammate’s structured OCR service;
+  - local Pix2Tex, which runs through Docker without an API key;
+  - a configurable team OCR endpoint.
+- Optional voice-to-maths input using ElevenLabs and Gemini.
+- Optional public practice-link import using Firecrawl.
+
+## Architecture
+
+The app is a single FastAPI service that serves the HTML, CSS, and JavaScript frontend from `static/`.
+
+```text
+Browser notebook ──→ FastAPI (`main.py`) ──→ deterministic maths checker
+       │                     │
+       │                     ├── InkMath / Team OCR / local Pix2Tex
+       │                     ├── Gemini (optional explanations and voice formatting)
+       │                     ├── ElevenLabs (optional speech transcription)
+       │                     └── Firecrawl (optional public practice-link import)
+       └────────────────────→ SQLite learner/session data
+```
+
+Student profiles and practice sessions are stored locally in `student_data.db`. This file is intentionally excluded from Git.
+
+## Quick start
+
+Requirements:
+
+- Python 3.10+
+- Docker Desktop only if you want the local Pix2Tex OCR fallback
+- Node.js only for the browser test suite or for running the separate InkMath project
+
+Create a Python environment and install dependencies:
 
 ```bash
 python3 -m venv .venv
@@ -12,157 +51,134 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Run the service:
+Start EduMe:
 
 ```bash
 uvicorn main:app --reload
 ```
 
-Open <http://127.0.0.1:8000/> to confirm the service is running, or use the
-interactive API form at <http://127.0.0.1:8000/docs>. The equation checker is
-a `POST` endpoint at `/check-step`, so it cannot be tested by simply opening
-that URL in a browser.
+Open [http://127.0.0.1:8000/app/](http://127.0.0.1:8000/app/).
 
-## Tablet notebook and pluggable OCR
+The health endpoint is [http://127.0.0.1:8000/](http://127.0.0.1:8000/) and FastAPI documentation is available at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs).
 
-Open <http://127.0.0.1:8000/app/> on an iPad (or any touch-enabled browser).
-The writing area supports Apple Pencil, touch, undo, and clear. Use a sample
-equation to test the full feedback flow right away, or type the LaTeX returned
-by your OCR system into the **Recognized equation** field.
+## Configuration
 
-The project includes a self-hosted handwriting-maths OCR service based on
-[Pix2Tex / LaTeX-OCR](https://github.com/lukas-blecher/LaTeX-OCR). Start it
-once with Docker Desktop running:
+Copy the example environment file and add only the services you intend to use:
 
 ```bash
-docker compose up ocr
-```
-
-Then start this FastAPI app in a second terminal as usual. The first model
-startup may take a while because its model checkpoint is loaded locally. No API
-token is required. The notebook's **Recognize writing** button sends a PNG of
-the canvas to the local service, receives LaTeX, and places it in the review
-field; use **Check this step** to get the concept feedback.
-
-The notebook includes an **OCR provider** toggle. Choose **Local Pix2Tex** for
-the included local model, or choose **Team OCR** after configuring your
-teammate's service. Copy `.env.example` to `.env`, set `TEAM_OCR_URL`, then
-start Uvicorn with:
-
-```bash
+cp .env.example .env
 uvicorn main:app --reload --env-file .env
 ```
 
-The browser never receives the team URL or credentials. `TEAM_OCR_URL` is a
-server-side adapter endpoint and must receive:
+Never commit `.env` or place service keys in browser code.
 
-```json
-{"imageData":"data:image/png;base64,...","sessionId":"...","stepIndex":0}
-```
+| Variable | Purpose | Required? |
+| --- | --- | --- |
+| `DEFAULT_OCR_PROVIDER` | `inkmath`, `local-pix2tex`, or `team-ocr` | No; defaults to `inkmath` |
+| `INKMATH_OCR_URL` | InkMath service URL | Needed for InkMath |
+| `PIX2TEX_URL` | Override for local Pix2Tex | No |
+| `TEAM_OCR_URL` | Server-side teammate OCR endpoint | Only for Team OCR |
+| `TEAM_OCR_NAME` | Learner-facing Team OCR label | No |
+| `GEMINI_API_KEY` | Detailed step explanations and voice formula formatting | Optional |
+| `GEMINI_MODEL` | Gemini model name | No |
+| `ELEVENLABS_API_KEY` | Speech transcription | Optional |
+| `FIRECRAWL_API_KEY` | Public practice-link import | Optional |
+| `MATH_TUTOR_DB` | Override for the local SQLite database path | Optional |
 
-and must return:
+### InkMath (default OCR)
 
-```json
-{"rawLatex":"a^2 + b^2 = c^2","confidence":0.91,"provider":"Teammate OCR"}
-```
+By default, EduMe sends handwriting to the teammate’s InkMath service at `http://127.0.0.1:3000/api/recognize`. Start that project separately and configure its `GEMINI_API_KEY` in that project’s own environment file. If it runs elsewhere, set `INKMATH_OCR_URL` here.
 
-If your teammate's API uses different field names or multipart uploads, adapt
-only `recognize_with_team_ocr` in `main.py`; the tablet UI and checker remain
-unchanged. `OCR_SERVICE_URL` continues to work as a legacy alias for
-`TEAM_OCR_URL`. When Team OCR is not selected, the service uses local Pix2Tex
-at port `8502`.
+### Local Pix2Tex fallback
 
-## Voice formulas and public lesson links
-
-The teammate's `photo-to-json-handwriting-to-latex` branch was built as a
-separate Node application, so its voice and Firecrawl features are ported into
-this FastAPI service instead of cherry-picked as a disconnected second app.
-
-- `POST /voice/transcribe` accepts a learner-approved recording (maximum 6 MB)
-  and sends it to ElevenLabs Scribe only when `ELEVENLABS_API_KEY` is configured.
-- `POST /voice/math-json` sends an editable transcript to Gemini and returns
-  plain-text/LaTex lines marked `needsReview: true`. It is instructed to retain
-  mistakes and ambiguity, never solve the mathematics.
-- `POST /import-problem-url` uses `FIRECRAWL_API_KEY` to extract existing
-  problems from one public lesson URL. Private, local, IP-address, and custom
-  port URLs are rejected. Returned items are also marked for review.
-
-Copy `.env.example` to `.env` and add only the keys you have authority to use.
-Keys stay server-side and must never be added to browser code or committed.
-
-## Student learning flow
-
-The first visit to `/app/` now begins with a learner profile. The local app
-stores a name, email, password, grade, country, and state/region in
-`student_data.db` (which is excluded from Git). After signing in, it:
-
-1. Selects a starter curriculum context from the grade and location profile.
-2. Creates one right-triangle problem using a Pythagorean triple.
-3. Keeps the student's submitted lines in a private practice session.
-4. Accepts the foundation equation, the numerical substitution/simplification,
-   or a direct valid solution for `c`.
-5. Explains a recognisable misconception, such as a missing square, in terms of
-   the Pythagorean foundation instead of merely marking the answer incorrect.
-
-The tablet presents two review actions: **Check this step** evaluates the
-current equation, while **Review full solution** summarises every flagged
-attempt in that practice session and connects it back to the foundation lesson.
-When handwriting is present, **Review full solution** silently separates the
-canvas into written lines, sends each line to the server-configured default OCR
-provider, then checks those returned equations in order before displaying the
-review. It now defaults to the local teammate project **InkMath** at
-`http://127.0.0.1:3000/api/recognize`. In
-`/Users/demonslayer/Documents/Projects/EduMe-main`, add `GEMINI_API_KEY` to its
-own `.env` and run `npm start`; then start this app with its `.env` file using
-`uvicorn main:app --reload --env-file .env`. Set
-`DEFAULT_OCR_PROVIDER=team-ocr` to use a different connected provider, or
-`local-pix2tex` to use Pix2Tex.
-
-## Adaptive tutoring strategies
-
-During registration, a learner can select one or more helpful approaches:
-Guided, Socratic, Worked Example, and Visual. The tutor begins with the first
-selected approach, then records whether the strategy offered before each step
-was followed by progress. Its initial authored rules are:
-
-- **Guided:** one small next action.
-- **Socratic:** after an incorrect line, ask a question targeted to the error.
-- **Worked Example:** after the same misconception appears repeatedly, show the
-  verified 6–8–10 parallel example before returning to the learner's triangle.
-- **Visual:** show a pinned, labelled right-triangle diagram and a cue about
-  the hypotenuse or the two shorter sides.
-
-Strategies can blend: for example, a learner who selected Visual support can
-receive a Socratic question alongside the pinned diagram. The authored prompts,
-worked example, and selection policy live in `main.py` rather than being
-generated by an LLM.
-
-The grade/location rules live in `curriculum_context_for` in `main.py`. They
-are intentionally a small starter policy, so replace or expand them with your
-verified country/state curriculum data before using the app beyond a prototype.
-Passwords are salted and hashed; for a deployed product, use HTTPS, secure
-cookies, rate limiting, password-reset/email verification, and a managed
-database.
-
-Run the test suite:
+The bundled Docker Compose service provides an offline, no-key handwriting-maths fallback:
 
 ```bash
-pytest
+docker compose up -d ocr
 ```
 
-## Manual request
+Select **Local Pix2Tex** in the step tools, or set:
 
 ```bash
-curl -X POST http://127.0.0.1:8000/check-step \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "sessionId": "abc123",
-    "stepIndex": 2,
-    "problemId": "pythagoras_01",
-    "rawLatex": "a + b^2 = c^2",
-    "confidence": 0.91,
-    "timestamp": 1234567890
-  }'
+DEFAULT_OCR_PROVIDER=local-pix2tex
 ```
 
-The response reports `correct`, `error`, or `unclear`. Inputs with OCR confidence below `0.6` immediately return `unclear` and are not parsed. The `errorType` field is intended for software; the frontend should display the plain-language `hint`.
+Pix2Tex is useful for prototyping, but handwritten maths recognition can be imperfect. EduMe therefore separates OCR from mathematical evaluation and treats unclear recognition conservatively.
+
+### Team OCR contract
+
+EduMe sends the selected endpoint JSON like this:
+
+```json
+{
+  "imageData": "data:image/png;base64,...",
+  "sessionId": "...",
+  "stepIndex": 0
+}
+```
+
+It expects:
+
+```json
+{
+  "rawLatex": "a^2 + b^2 = c^2",
+  "confidence": 0.91,
+  "provider": "Team OCR"
+}
+```
+
+Adapt `recognize_with_team_ocr` in `main.py` if the teammate service uses a different request or response shape.
+
+## Learning and feedback flow
+
+1. The learner picks a topic from the mathematics journey.
+2. EduMe creates a private practice session and displays one problem.
+3. The learner writes in the notebook, types a step, or uses the optional voice flow.
+4. Each mathematical step is checked against the expected reasoning sequence—not merely the final answer.
+5. If an error appears, the coach selects support appropriate to that error:
+   - foundation guidance for a wrong relationship or theorem;
+   - a focused hint for a calculation or progression mistake;
+   - an optional detailed explanation when the learner selects **I don’t understand**;
+   - a parallel worked example only after that additional support is needed.
+6. Strategy outcomes are stored so the prototype can record which support helped a learner progress.
+
+The current curriculum and learner-progress values are prototype data. They should be replaced with verified curriculum data and a measured mastery model before production use.
+
+## Safety and privacy notes
+
+- OCR output is treated as untrusted input and is evaluated separately.
+- Gemini, ElevenLabs, and Firecrawl are only contacted when the learner initiates the relevant action and the server has the corresponding key.
+- Public-link import rejects private, local, IP-address, login, and custom-port URLs.
+- The app uses local SQLite and salted password hashing for the prototype. Production requires HTTPS, secure cookies, rate limiting, password reset/verification, and a managed database.
+- This is a learning prototype, not a replacement for teacher assessment.
+
+## Tests
+
+Run the Python API and logic tests:
+
+```bash
+.venv/bin/python -m pytest -q
+```
+
+Run the browser-behaviour tests:
+
+```bash
+node --test tests/*.test.mjs
+```
+
+## Project layout
+
+```text
+main.py             FastAPI app, learning model, OCR adapters, and integrations
+static/             EduMe frontend (HTML, CSS, JavaScript)
+tests/              Backend and browser-behaviour tests
+compose.yaml        Local Pix2Tex OCR service
+.env.example        Optional server-side configuration
+requirements.txt    Python dependencies
+```
+
+## Development notes
+
+- Keep API keys server-side and out of commits.
+- Add a new practice topic by expanding the problem definitions and expectations in `main.py`.
+- Preserve the distinction between transcription and correctness: OCR reads what a learner wrote; the checker evaluates the mathematical step.
