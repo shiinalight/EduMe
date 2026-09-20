@@ -9,7 +9,6 @@ import ipaddress
 import json
 import os
 import re
-import sqlite3
 import time
 from collections.abc import Callable
 from typing import Literal
@@ -17,8 +16,11 @@ from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
 import httpx
+import psycopg
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from database import Row
 
 MAX_SCRIPT = 4000
 ID_PATTERN = r"^[A-Za-z0-9_-]{1,200}$"
@@ -155,16 +157,26 @@ class HeyGenClient:
                 "message": "HeyGen could not render this video. Check its dashboard for details before generating another." if state == "failed" else None}
 
 
-def create_video_router(authenticate: Callable, connect: Callable[[], sqlite3.Connection],
+VIDEO_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS edume_private.heygen_video_jobs (
+    id TEXT PRIMARY KEY,
+    student_id BIGINT NOT NULL REFERENCES edume_private.students(id),
+    session_id TEXT NOT NULL REFERENCES edume_private.practice_sessions(id),
+    request_id TEXT NOT NULL,
+    fingerprint TEXT NOT NULL,
+    video_id TEXT,
+    status TEXT NOT NULL,
+    created_at DOUBLE PRECISION NOT NULL,
+    submitted_at DOUBLE PRECISION NOT NULL,
+    UNIQUE (student_id, request_id)
+);
+CREATE INDEX IF NOT EXISTS heygen_video_jobs_session ON edume_private.heygen_video_jobs(student_id, session_id, created_at);
+"""
+
+
+def create_video_router(authenticate: Callable, connect: Callable[[], psycopg.Connection[Row]],
                         provider_factory: Callable[[], HeyGenClient] = HeyGenClient) -> APIRouter:
     """Inject existing authentication/storage instead of importing or changing the tutor."""
-    with connect() as db:
-        db.execute("""CREATE TABLE IF NOT EXISTS heygen_video_jobs (
-            id TEXT PRIMARY KEY, student_id INTEGER NOT NULL, session_id TEXT NOT NULL,
-            request_id TEXT NOT NULL, fingerprint TEXT NOT NULL, video_id TEXT,
-            status TEXT NOT NULL, created_at REAL NOT NULL, submitted_at REAL NOT NULL,
-            UNIQUE(student_id, request_id)
-        )""")
 
     def student(request: Request, response: Response, math_tutor_session: str | None = Cookie(default=None)):
         response.headers["Cache-Control"] = "no-store"
@@ -176,7 +188,7 @@ def create_video_router(authenticate: Callable, connect: Callable[[], sqlite3.Co
     router = APIRouter(prefix="/api/heygen", tags=["Tutor videos"])
 
     def owned_session(db, session_id, student_id):
-        if db.execute("SELECT id FROM practice_sessions WHERE id = ? AND student_id = ?", (session_id, student_id)).fetchone() is None:
+        if db.execute("SELECT id FROM edume_private.practice_sessions WHERE id = %s AND student_id = %s", (session_id, student_id)).fetchone() is None:
             raise HTTPException(404, "Practice session not found.")
 
     def public_job(row):
@@ -195,7 +207,7 @@ def create_video_router(authenticate: Callable, connect: Callable[[], sqlite3.Co
     def videos(sessionId: str = Query(min_length=1, max_length=200), learner=Depends(student)):
         with connect() as db:
             owned_session(db, sessionId, learner["id"])
-            rows = db.execute("SELECT * FROM heygen_video_jobs WHERE student_id = ? AND session_id = ? ORDER BY created_at DESC LIMIT 10", (learner["id"], sessionId)).fetchall()
+            rows = db.execute("SELECT * FROM edume_private.heygen_video_jobs WHERE student_id = %s AND session_id = %s ORDER BY created_at DESC LIMIT 10", (learner["id"], sessionId)).fetchall()
         return {"videos": [public_job(row) for row in rows]}
 
     @router.post("/videos", status_code=202)
@@ -204,9 +216,12 @@ def create_video_router(authenticate: Callable, connect: Callable[[], sqlite3.Co
         fingerprint = hashlib.sha256(json.dumps(value.model_dump(mode="json"), sort_keys=True).encode()).hexdigest()
         now = time.time()
         with connect() as db:
-            db.execute("BEGIN IMMEDIATE")
+            # Serialize this learner's submissions so the idempotency lookup, the
+            # active-job cap and the insert cannot interleave. Released at commit/rollback,
+            # which is also safe behind a transaction pooler.
+            db.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (f"heygen_video_jobs:{learner['id']}",))
             owned_session(db, value.sessionId, learner["id"])
-            previous = db.execute("SELECT * FROM heygen_video_jobs WHERE student_id = ? AND request_id = ?", (learner["id"], str(value.requestId))).fetchone()
+            previous = db.execute("SELECT * FROM edume_private.heygen_video_jobs WHERE student_id = %s AND request_id = %s", (learner["id"], str(value.requestId))).fetchone()
             if previous:
                 if previous["fingerprint"] != fingerprint:
                     raise HTTPException(409, "This submission ID belongs to a different script or selection. Start a new reviewed draft.")
@@ -217,29 +232,29 @@ def create_video_router(authenticate: Callable, connect: Callable[[], sqlite3.Co
                 if previous["status"] == "submitting" and now - previous["submitted_at"] < 90:
                     raise HTTPException(409, "This video is being submitted. Wait before retrying the same request.")
                 job_id = previous["id"]
-                db.execute("UPDATE heygen_video_jobs SET status = 'submitting', submitted_at = ? WHERE id = ?", (now, job_id))
+                db.execute("UPDATE edume_private.heygen_video_jobs SET status = 'submitting', submitted_at = %s WHERE id = %s", (now, job_id))
             else:
                 # Keep this local prototype from accidentally creating expensive batches.
-                active = db.execute("SELECT COUNT(*) FROM heygen_video_jobs WHERE student_id = ? AND status IN ('submitting', 'pending', 'processing', 'submission_unknown') AND created_at > ?", (learner["id"], now - 86400)).fetchone()[0]
+                active = db.execute("SELECT COUNT(*) AS active FROM edume_private.heygen_video_jobs WHERE student_id = %s AND status IN ('submitting', 'pending', 'processing', 'submission_unknown') AND created_at > %s", (learner["id"], now - 86400)).fetchone()["active"]
                 if active >= 3:
                     raise HTTPException(429, "You already have three active or unconfirmed videos. Check their status or the HeyGen dashboard first.")
                 job_id = str(uuid4())
-                db.execute("INSERT INTO heygen_video_jobs (id, student_id, session_id, request_id, fingerprint, status, created_at, submitted_at) VALUES (?, ?, ?, ?, ?, 'submitting', ?, ?)", (job_id, learner["id"], value.sessionId, str(value.requestId), fingerprint, now, now))
+                db.execute("INSERT INTO edume_private.heygen_video_jobs (id, student_id, session_id, request_id, fingerprint, status, created_at, submitted_at) VALUES (%s, %s, %s, %s, %s, 'submitting', %s, %s)", (job_id, learner["id"], value.sessionId, str(value.requestId), fingerprint, now, now))
         try:
             video_id = provider_factory().create(value, f"edume:{learner['id']}:{value.requestId}")
         except HTTPException as exc:
             with connect() as db:
-                db.execute("UPDATE heygen_video_jobs SET status = ? WHERE id = ?", ("failed" if exc.status_code == 503 else "submission_unknown", job_id))
+                db.execute("UPDATE edume_private.heygen_video_jobs SET status = %s WHERE id = %s", ("failed" if exc.status_code == 503 else "submission_unknown", job_id))
             raise
         with connect() as db:
-            db.execute("UPDATE heygen_video_jobs SET video_id = ?, status = 'pending' WHERE id = ?", (video_id, job_id))
-            row = db.execute("SELECT * FROM heygen_video_jobs WHERE id = ?", (job_id,)).fetchone()
+            db.execute("UPDATE edume_private.heygen_video_jobs SET video_id = %s, status = 'pending' WHERE id = %s", (video_id, job_id))
+            row = db.execute("SELECT * FROM edume_private.heygen_video_jobs WHERE id = %s", (job_id,)).fetchone()
         return public_job(row)
 
     @router.get("/videos/{job_id}")
     def video(job_id: UUID, learner=Depends(student)):
         with connect() as db:
-            row = db.execute("SELECT * FROM heygen_video_jobs WHERE id = ? AND student_id = ?", (str(job_id), learner["id"])).fetchone()
+            row = db.execute("SELECT * FROM edume_private.heygen_video_jobs WHERE id = %s AND student_id = %s", (str(job_id), learner["id"])).fetchone()
         if row is None:
             raise HTTPException(404, "Video not found.")
         result = public_job(row)
@@ -248,7 +263,7 @@ def create_video_router(authenticate: Callable, connect: Callable[[], sqlite3.Co
             return result
         details = provider_factory().status(row["video_id"])
         with connect() as db:
-            db.execute("UPDATE heygen_video_jobs SET status = ? WHERE id = ?", (details["status"], str(job_id)))
+            db.execute("UPDATE edume_private.heygen_video_jobs SET status = %s WHERE id = %s", (details["status"], str(job_id)))
         return {**result, **details}
 
     return router

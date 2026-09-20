@@ -1,4 +1,4 @@
-"""Real application integration tests; isolated SQLite and no outbound network."""
+"""Real application integration tests; isolated PostgreSQL schema and no outbound network."""
 from __future__ import annotations
 
 import asyncio
@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 import capture_library as library
 import main
 import math_capture
-from heygen_video import HeyGenClient, create_video_router
+from heygen_video import HeyGenClient
 
 IMAGE = "data:image/png;base64,iVBORw0KGgo="
 QUESTION = {"label": "1", "text": "Find the area of the circle.", "latex": "r=7",
@@ -23,13 +23,9 @@ LINE = {"text": "2 + 2 = 5", "latex": "2+2=5", "legibility": "uncertain", "ambig
 
 
 @pytest.fixture(autouse=True)
-def isolated_backend(tmp_path, monkeypatch):
-    monkeypatch.setattr(main, "DATABASE_PATH", tmp_path / "unified.sqlite3")
+def isolated_backend(clean_database, monkeypatch):
     for name in ("GEMINI_API_KEY", "GEMINI_MODEL", "ELEVENLABS_API_KEY", "FIRECRAWL_API_KEY", "HEYGEN_API_KEY", "INKMATH_OCR_URL"):
         monkeypatch.delenv(name, raising=False)
-    main.initialize_database()
-    # Initialize the existing HeyGen schema on this isolated host DB; do not remount routes.
-    create_video_router(main.authenticated_student, main.database_connection)
 
     def no_network(*args, **kwargs):
         pytest.fail("Unmocked outbound network request")
@@ -119,7 +115,7 @@ def test_same_origin_and_no_origin_clients_can_save_and_read(learner):
 
 
 @pytest.mark.parametrize("source_type", ["manual", "photo", "url", "voice"])
-def test_reviewed_library_roundtrip_and_persistence_in_existing_sqlite(learner, source_type):
+def test_reviewed_library_roundtrip_and_persistence_in_existing_database(learner, source_type):
     saved = notebook(learner, sourceType=source_type, sourceUrl="https://lessons.example.org/circles#question1")
     assert saved == {**DOCUMENT, "sourceType": source_type, "sourceUrl": "https://lessons.example.org/circles", "id": saved["id"]}
     assert private(learner.get("/api/notebooks")) == {"notebooks": [saved]}
@@ -128,10 +124,10 @@ def test_reviewed_library_roundtrip_and_persistence_in_existing_sqlite(learner, 
     reopened.cookies.update(learner.cookies)
     assert private(reopened.get(f"/api/notebooks/{saved['id']}")) == saved
     with main.database_connection() as db:
-        row = db.execute("SELECT * FROM capture_notebooks WHERE id = ?", (saved["id"],)).fetchone()
+        row = db.execute("SELECT * FROM edume_private.capture_notebooks WHERE id = %s", (saved["id"],)).fetchone()
         assert row["student_id"] == learner.get("/me").json()["id"]
         assert json.loads(row["questions_json"]) == [QUESTION]
-        assert row["reviewed"] == 1
+        assert row["reviewed"] is True
 
 
 @pytest.mark.parametrize("reviewed", [False, None, 0, 1, "true", "false", []])
@@ -228,10 +224,10 @@ def test_imported_steps_never_use_authored_checker_or_paid_explanation(learner, 
     private(learner.post(f"/learning-sessions/{session['sessionId']}/explain-step", json={"rawLatex": "invented"}), 404)
     private(learner.post(f"/learning-sessions/{session['sessionId']}/explain-step", json={"rawLatex": "x=4", "errorType": "correct"}), 422)
     with main.database_connection() as db:
-        assert db.execute("SELECT COUNT(*) FROM tutor_strategy_events").fetchone()[0] == 0
-        assert db.execute("SELECT COUNT(*) FROM session_tutor_state").fetchone()[0] == 0
-        assert db.execute("SELECT next_step FROM practice_sessions WHERE id = ?", (session["sessionId"],)).fetchone()[0] == len(texts)
-        assert {tuple(row) for row in db.execute("SELECT status, error_type FROM practice_steps")} == {("unclear", "ungraded")}
+        assert db.execute("SELECT COUNT(*) AS n FROM edume_private.tutor_strategy_events").fetchone()["n"] == 0
+        assert db.execute("SELECT COUNT(*) AS n FROM edume_private.session_tutor_state").fetchone()["n"] == 0
+        assert db.execute("SELECT next_step FROM edume_private.practice_sessions WHERE id = %s", (session["sessionId"],)).fetchone()["next_step"] == len(texts)
+        assert {tuple(row.values()) for row in db.execute("SELECT status, error_type FROM edume_private.practice_steps")} == {("unclear", "ungraded")}
     main.initialize_database()
     assert private(learner.get(f"/learning-sessions/{session['sessionId']}/review")) == review
 
@@ -241,7 +237,7 @@ def test_imported_steps_and_session_growth_are_bounded(learner):
     private(step(learner, session["sessionId"], "x" * 16001), 422)
     private(step(learner, session["sessionId"], "x" * 16000))
     with main.database_connection() as db:
-        db.execute("UPDATE practice_sessions SET next_step = ? WHERE id = ?", (library.MAX_SAVED_STEPS, session["sessionId"]))
+        db.execute("UPDATE edume_private.practice_sessions SET next_step = %s WHERE id = %s", (library.MAX_SAVED_STEPS, session["sessionId"]))
     private(step(learner, session["sessionId"]), 409)
 
 

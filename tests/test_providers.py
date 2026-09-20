@@ -23,9 +23,7 @@ REAL_ASYNC_CLIENT = httpx.AsyncClient
 
 
 @pytest.fixture
-def learner(tmp_path, monkeypatch):
-    monkeypatch.setattr(main, "DATABASE_PATH", tmp_path / "providers.sqlite3")
-    main.initialize_database()
+def learner(clean_database, monkeypatch):
     client = TestClient(main.app)
     assert client.post("/auth/register", json={
         "fullName": "Provider Student", "email": f"{uuid4()}@example.test", "password": "test-password",
@@ -264,7 +262,7 @@ def test_imported_review_returns_all_raw_steps_even_if_legacy_status_was_correct
         "questions": [QUESTION], "reviewed": True}), 201)
     session = private(learner.post(f"/api/notebooks/{notebook['id']}/questions/0/practice"), 201)
     with main.database_connection() as db:
-        db.execute("INSERT INTO practice_steps (practice_session_id, step_index, raw_latex, status, error_type, created_at) VALUES (?, 0, ?, 'correct', NULL, 1)",
+        db.execute("INSERT INTO edume_private.practice_steps (practice_session_id, step_index, raw_latex, status, error_type, created_at) VALUES (%s, 0, %s, 'correct', NULL, 1)",
                    (session["sessionId"], "  raw saved step  "))
     result = private(learner.get(f"/learning-sessions/{session['sessionId']}/review"))
     assert result["assessment"] == "ungraded"

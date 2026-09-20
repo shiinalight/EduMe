@@ -18,6 +18,15 @@
 			],
 			"isBackground": true,
 			"problemMatcher": []
+		},
+		{
+			"label": "Initialize database (init_db.py)",
+			"type": "shell",
+			"command": "${command:python.interpreterPath}",
+			"args": [
+				"init_db.py"
+			],
+			"problemMatcher": []
 		}
 	]
 }

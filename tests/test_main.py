@@ -1,10 +1,12 @@
 import secrets
 
+import pytest
 from fastapi.testclient import TestClient
 
 from main import app, database_connection, decode_voice_audio, practice_problem, public_lesson_url
 
 
+pytestmark = pytest.mark.usefixtures("clean_database")
 client = TestClient(app)
 
 
@@ -218,7 +220,7 @@ def test_learning_session_accepts_a_correct_numeric_solution_chain():
     practice_session_id = f"numeric-chain-{secrets.token_hex(6)}"
     with database_connection() as connection:
         connection.execute(
-            "INSERT INTO practice_sessions (id, student_id, problem_key, next_step, created_at) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO edume_private.practice_sessions (id, student_id, problem_key, next_step, created_at) VALUES (%s, %s, %s, %s, %s)",
             (practice_session_id, learner.get("/me").json()["id"], "pythagoras_3_4_5", 0, 0),
         )
 
@@ -281,7 +283,7 @@ def test_learning_session_explains_a_numeric_transcription_disagreement():
     with database_connection() as connection:
         session_id = f"numeric-hint-{secrets.token_hex(6)}"
         connection.execute(
-            "INSERT INTO practice_sessions (id, student_id, problem_key, next_step, created_at) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO edume_private.practice_sessions (id, student_id, problem_key, next_step, created_at) VALUES (%s, %s, %s, %s, %s)",
             (session_id, learner.get("/me").json()["id"], "pythagoras_8_15_17", 0, 0),
         )
     result = learner.post(
@@ -331,7 +333,7 @@ def test_adaptive_tutor_uses_visual_preference_then_socratic_support():
     assert correct["status"] == "correct"
     with database_connection() as connection:
         outcome = connection.execute(
-            "SELECT outcome FROM tutor_strategy_events WHERE student_id = ? AND mode = 'socratic' ORDER BY id DESC LIMIT 1",
+            "SELECT outcome FROM edume_private.tutor_strategy_events WHERE student_id = %s AND mode = 'socratic' ORDER BY id DESC LIMIT 1",
             (registered.json()["id"],),
         ).fetchone()
     assert outcome["outcome"] == 1

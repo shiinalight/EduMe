@@ -1,6 +1,6 @@
 """Private, reviewed question storage and non-grading imported practice.
 
-Uses the host's cookie authentication and SQLite connection. No provider calls,
+Uses the host's cookie authentication and PostgreSQL connection. No provider calls,
 media storage, solution generation, or imports from the host application.
 """
 from __future__ import annotations
@@ -9,13 +9,13 @@ import asyncio
 import ipaddress
 import json
 import re
-import sqlite3
 import time
 from collections.abc import Callable
 from typing import Annotated, Any, Literal
 from urllib.parse import parse_qsl, urlsplit
 from uuid import uuid4
 
+import psycopg
 from fastapi import APIRouter, Cookie, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -23,6 +23,8 @@ from fastapi.routing import APIRoute
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
 from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
+
+from database import Row
 
 # Reuse the capture boundary's strict JSON and browser-origin checks.
 from math_capture import _same_origin, _strict_json
@@ -167,6 +169,9 @@ def create_private_route(authenticate: Callable[..., Any]) -> type[APIRoute]:
                     response = await original(request)
                 except StarletteHTTPException as exc:
                     response = JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+                except psycopg.DataError:
+                    # e.g. NUL characters, which PostgreSQL text cannot store.
+                    response = JSONResponse({"detail": "Invalid request. Check the reviewed fields and size limits."}, status_code=422)
                 except RequestValidationError:
                     # Pydantic's default errors echo submitted media/text/credentials.
                     response = JSONResponse({"detail": "Invalid request. Check the reviewed fields and size limits."}, status_code=422)
@@ -180,36 +185,35 @@ def create_private_route(authenticate: Callable[..., Any]) -> type[APIRoute]:
     return PrivateRoute
 
 
-def initialize_library(connect: Callable[[], sqlite3.Connection]) -> None:
-    with connect() as db:
-        db.executescript("""
-            CREATE TABLE IF NOT EXISTS capture_notebooks (
-                id TEXT PRIMARY KEY,
-                student_id INTEGER NOT NULL REFERENCES students(id),
-                title TEXT NOT NULL,
-                source_type TEXT NOT NULL CHECK(source_type IN ('manual', 'photo', 'url', 'voice')),
-                source_url TEXT,
-                questions_json TEXT NOT NULL,
-                reviewed INTEGER NOT NULL CHECK(reviewed = 1),
-                created_at INTEGER NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS capture_notebooks_owner ON capture_notebooks(student_id, created_at);
-        """)
+LIBRARY_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS edume_private.capture_notebooks (
+    seq BIGINT GENERATED ALWAYS AS IDENTITY,
+    id TEXT PRIMARY KEY,
+    student_id BIGINT NOT NULL REFERENCES edume_private.students(id),
+    title TEXT NOT NULL,
+    source_type TEXT NOT NULL CHECK (source_type IN ('manual', 'photo', 'url', 'voice')),
+    source_url TEXT,
+    questions_json TEXT NOT NULL,
+    reviewed BOOLEAN NOT NULL CHECK (reviewed),
+    created_at BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS capture_notebooks_owner ON edume_private.capture_notebooks(student_id, created_at, seq);
+"""
 
 
-def owned_notebook(db: sqlite3.Connection, notebook_id: str, student_id: int) -> NotebookResponse:
-    row = db.execute("SELECT * FROM capture_notebooks WHERE id = ? AND student_id = ?", (notebook_id, student_id)).fetchone()
+def owned_notebook(db: psycopg.Connection[Row], notebook_id: str, student_id: int) -> NotebookResponse:
+    row = db.execute("SELECT * FROM edume_private.capture_notebooks WHERE id = %s AND student_id = %s", (notebook_id, student_id)).fetchone()
     if row is None:
         raise HTTPException(404, "Notebook not found.")
     return notebook_response(row)
 
 
-def notebook_response(row: sqlite3.Row) -> NotebookResponse:
+def notebook_response(row: Row) -> NotebookResponse:
     return NotebookResponse(id=row["id"], title=row["title"], sourceType=row["source_type"], sourceUrl=row["source_url"],
                             questions=json.loads(row["questions_json"]), reviewed=True)
 
 
-def imported_question(db: sqlite3.Connection, problem_key: str, student_id: int) -> ReviewedQuestion:
+def imported_question(db: psycopg.Connection[Row], problem_key: str, student_id: int) -> ReviewedQuestion:
     try:
         prefix, notebook_id, raw_index = problem_key.split(":")
         if prefix != "imported" or not raw_index.isdecimal():
@@ -220,9 +224,8 @@ def imported_question(db: sqlite3.Connection, problem_key: str, student_id: int)
         raise HTTPException(404, "Imported question not found.") from None
 
 
-def create_library_router(authenticate: Callable[..., Any], connect: Callable[[], sqlite3.Connection],
+def create_library_router(authenticate: Callable[..., Any], connect: Callable[[], psycopg.Connection[Row]],
                           practice_response_model: type[BaseModel]) -> APIRouter:
-    initialize_library(connect)
     router = APIRouter(prefix="/api/notebooks", tags=["Reviewed notebooks"], route_class=create_private_route(authenticate))
 
     @router.post("", response_model=NotebookResponse, status_code=201)
@@ -230,9 +233,9 @@ def create_library_router(authenticate: Callable[..., Any], connect: Callable[[]
         learner = authenticate(math_tutor_session)
         notebook_id = str(uuid4())
         with connect() as db:
-            db.execute("""INSERT INTO capture_notebooks
+            db.execute("""INSERT INTO edume_private.capture_notebooks
                 (id, student_id, title, source_type, source_url, questions_json, reviewed, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, 1, ?)""",
+                VALUES (%s, %s, %s, %s, %s, %s, TRUE, %s)""",
                 (notebook_id, learner["id"], value.title, value.sourceType, value.sourceUrl,
                  json.dumps([q.model_dump() for q in value.questions], ensure_ascii=False), int(time.time())))
         return NotebookResponse(id=notebook_id, **value.model_dump())
@@ -241,7 +244,7 @@ def create_library_router(authenticate: Callable[..., Any], connect: Callable[[]
     def list_notebooks(math_tutor_session: str | None = Cookie(default=None)):
         learner = authenticate(math_tutor_session)
         with connect() as db:
-            rows = db.execute("SELECT * FROM capture_notebooks WHERE student_id = ? ORDER BY created_at DESC, rowid DESC",
+            rows = db.execute("SELECT * FROM edume_private.capture_notebooks WHERE student_id = %s ORDER BY created_at DESC, seq DESC",
                               (learner["id"],)).fetchall()
         return NotebookListResponse(notebooks=[notebook_response(row) for row in rows])
 
@@ -262,7 +265,7 @@ def create_library_router(authenticate: Callable[..., Any], connect: Callable[[]
             question = notebook.questions[index]
             session_id = str(uuid4())
             problem_key = f"imported:{notebook_id}:{index}"
-            db.execute("INSERT INTO practice_sessions (id, student_id, problem_key, next_step, created_at) VALUES (?, ?, ?, 0, ?)",
+            db.execute("INSERT INTO edume_private.practice_sessions (id, student_id, problem_key, next_step, created_at) VALUES (%s, %s, %s, 0, %s)",
                        (session_id, learner["id"], problem_key, int(time.time())))
         prompt = "\n".join(part for part in (question.label, question.text, question.latex, question.diagram_description) if part)
         return practice_response_model(sessionId=session_id, problemId=problem_key, topic=notebook.title, prompt=prompt,

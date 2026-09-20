@@ -4,7 +4,7 @@
 
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![FastAPI](https://img.shields.io/badge/backend-FastAPI-009688)
-![SQLite](https://img.shields.io/badge/storage-SQLite-003B57)
+![PostgreSQL](https://img.shields.io/badge/storage-PostgreSQL-336791)
 ![Status](https://img.shields.io/badge/status-prototype-orange)
 
 One learner account, one private database, one process on port `8001`. Every AI-generated result — a photo transcription, a spoken formula, an imported worksheet, an avatar script — is shown to the student for explicit review before it's saved or used for grading.
@@ -60,7 +60,7 @@ flowchart LR
         Library["capture_library.py<br/>notebooks"]
         Tutor["main.py<br/>SymPy step checker · tutoring policy"]
         Video["heygen_video.py<br/>avatar coach"]
-        DB[("SQLite<br/>student_data.db")]
+        DB[("PostgreSQL · Supabase<br/>private edume_private schema")]
     end
 
     Gemini["Gemini"]
@@ -81,7 +81,7 @@ flowchart LR
     Video --> DB
 ```
 
-Every outbound call is server-side only — provider keys and URLs never reach the browser. Raw photos and audio are never stored; only reviewed text, attempts, and video job metadata land in SQLite.
+Every outbound call is server-side only — provider keys and URLs never reach the browser. Raw photos and audio are never stored; only reviewed text, attempts, and video job metadata land in PostgreSQL.
 
 ## Quickstart
 
@@ -92,10 +92,13 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
-cp .env.example .env   # optional — every provider key is optional
+cp .env.example .env   # then set DATABASE_URL (required); every provider key is optional
 
+python init_db.py      # once: creates the private schema and tables (loads .env)
 uvicorn main:app --reload --env-file .env --host 127.0.0.1 --port 8001
 ```
+
+`python init_db.py --check` only tests the connection and changes nothing. Re-running `init_db.py` is safe. The app never creates tables itself, so start it only after the database is initialized.
 
 Open **http://127.0.0.1:8001/app/** for the full app.
 
@@ -105,14 +108,16 @@ Open **http://127.0.0.1:8001/app/** for the full app.
 | `/` | Health check |
 | `/docs` | Interactive API explorer (Swagger UI) |
 
-No Node server, no port 3000, no Docker required for the base app — manual question entry and built-in Pythagoras/algebra practice work with zero API keys configured. Microphone access needs `localhost` or HTTPS. Supported image formats: PNG, JPEG, WebP, up to 6 MiB (no PDF/HEIC).
+No Node server, no port 3000, no Docker required for the base app — manual question entry and built-in Pythagoras/algebra practice work with zero provider API keys configured (a PostgreSQL `DATABASE_URL` is still required). Microphone access needs `localhost` or HTTPS. Supported image formats: PNG, JPEG, WebP, up to 6 MiB (no PDF/HEIC).
 
 ## Configuration
 
-All keys are optional and stay server-side. Copy `.env.example` → `.env`, add only what you have, save, and restart the server (env vars load at process startup).
+Provider keys are optional; `DATABASE_URL` is required. Everything stays server-side. Copy `.env.example` → `.env`, add what you have, save, and restart the server (env vars load at process startup).
 
 | Variable | Unlocks | Notes |
 |---|---|---|
+| `DATABASE_URL` | **Required.** All storage | PostgreSQL URI. For Supabase use the **transaction pooler** string (port 6543). Percent-encode special characters in the password (`#`→`%23`, `$`→`%24`, `@`→`%40`, `[`→`%5B`, `]`→`%5D`) and drop the `[ ]` placeholder brackets from the dashboard template |
+| `DATABASE_SSLMODE` | — | Defaults to `require`; `verify-full` for stricter checking. Only lower it for a local test database |
 | `GEMINI_API_KEY` | Handwriting/worksheet OCR, spoken-math formatting | Used directly in-process; `GEMINI_MODEL` overrides the default model |
 | `ELEVENLABS_API_KEY` | Voice transcription | Speech-to-Text access required |
 | `FIRECRAWL_API_KEY` | Import problems from a public lesson URL | Private/local/IP/custom-port URLs are always rejected |
@@ -211,16 +216,24 @@ Response reports `correct`, `error`, or `unclear` (OCR confidence below `0.6` re
 ## Testing
 
 ```bash
-pytest                          # backend: providers, auth, notebooks, tutoring, HeyGen ownership/idempotency
+pytest                          # backend: database, providers, auth, notebooks, tutoring, HeyGen ownership/idempotency (needs TEST_DATABASE_URL)
 node --test tests/*.test.mjs    # frontend: drawing, review consent, session/network edge cases
 ```
 
-Tests run against a temporary SQLite database and block unmocked outbound network calls — no paid live provider calls are made. Configured-account access, real billing, and actual microphone/stylus/avatar rendering still need manual verification.
+Backend tests need a **disposable** PostgreSQL database, given as `TEST_DATABASE_URL` (they never read `DATABASE_URL`, and refuse Supabase hosts). Each test rebuilds the `edume_private` schema, so never point it at data you want to keep:
+
+```bash
+TEST_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/edume_test pytest
+```
+
+Tests block unmocked outbound network calls — no paid live provider calls are made. Nothing in the suite exercises Supabase's transaction pooler itself; verify that once with `python init_db.py --check`. Configured-account access, real billing, and actual microphone/stylus/avatar rendering still need manual verification.
 
 ## Project layout
 
 ```
-main.py              FastAPI app, auth, SymPy step checker, tutoring policy
+main.py              FastAPI app, auth, SymPy step checker, tutoring policy, core schema
+database.py           PostgreSQL connection (SSL, pooler-safe) and schema setup
+init_db.py            Command that creates/updates the database tables
 math_capture.py       Gemini-backed handwriting/worksheet OCR + schema validation
 capture_library.py    Private reviewed-question notebooks
 heygen_video.py        Avatar coach provider adapter
@@ -235,4 +248,5 @@ compose.yaml            Optional local Pix2Tex OCR service
 - Diagram descriptions are transcribed text, not reconstructed images.
 - Dashboard percentages are labelled prototype examples, not measured mastery.
 - Curriculum context rules (`curriculum_context_for` in `main.py`) are a small starter policy — replace with verified country/state curriculum data before real use.
-- This is a local prototype: before deploying anywhere public, add HTTPS/secure cookies, trusted-host/proxy config, rate limiting, account recovery, and a managed database. Capture limits are per-process, not deployment-wide.
+- This is a local prototype: before deploying anywhere public, add HTTPS/secure cookies, trusted-host/proxy config, rate limiting, and account recovery. Capture limits are per-process, not deployment-wide.
+- Storage moved from SQLite to PostgreSQL with no data migration: a new database starts empty (an old `student_data.db` is ignored, not deleted). Each query opens a fresh connection through the pooler; add a connection pool if latency matters.

@@ -1,6 +1,7 @@
 import json
-import sqlite3
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from uuid import uuid4
 
 import httpx
@@ -8,6 +9,7 @@ import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
+import main
 from heygen_video import HeyGenClient, VideoRequest, create_video_router, public_https
 
 
@@ -91,17 +93,21 @@ def test_status_checks_id_and_only_returns_safe_delivery_details():
 
 
 @pytest.fixture
-def service(tmp_path, monkeypatch):
-    path = tmp_path / "video-tests.db"
-
-    def connect():
-        db = sqlite3.connect(path)
-        db.row_factory = sqlite3.Row
-        return db
+def service(clean_database, monkeypatch):
+    connect = main.database_connection
 
     with connect() as db:
-        db.execute("CREATE TABLE practice_sessions (id TEXT PRIMARY KEY, student_id INTEGER)")
-        db.executemany("INSERT INTO practice_sessions VALUES (?, ?)", [("practice-a", 1), ("practice-b", 2)])
+        for student_id in (1, 2):
+            db.execute(
+                "INSERT INTO edume_private.students (id, full_name, email, password_salt, password_hash, grade, country, state, created_at)"
+                " VALUES (%s, 'Video Student', %s, 'salt', 'hash', 8, 'United States', 'Oregon', 0)",
+                (student_id, f"video-{student_id}@example.test"),
+            )
+        with db.cursor() as cursor:
+            cursor.executemany(
+                "INSERT INTO edume_private.practice_sessions (id, student_id, problem_key, next_step, created_at) VALUES (%s, %s, 'pythagoras_3_4_5', 0, 0)",
+                [("practice-a", 1), ("practice-b", 2)],
+            )
 
     def auth(cookie):
         if cookie not in ("one", "two"):
@@ -175,7 +181,7 @@ def test_duplicate_submission_reuses_job_and_other_learners_cannot_read_it(servi
     status = client.get(f"/api/heygen/videos/{job_id}").json()
     assert status["status"] == "completed"
     with connect() as db:
-        row = db.execute("SELECT * FROM heygen_video_jobs WHERE id = ?", (job_id,)).fetchone()
+        row = db.execute("SELECT * FROM edume_private.heygen_video_jobs WHERE id = %s", (job_id,)).fetchone()
         assert row["status"] == "completed"
         assert "script" not in row.keys()  # Narration isn't persisted locally.
     client.cookies.set("math_tutor_session", "two")
@@ -195,7 +201,7 @@ def test_uncertain_submission_retries_same_id_and_expires_safely(service):
     assert client.post("/api/heygen/videos", json=value).status_code == 202
     assert provider.calls[0][1] == provider.calls[1][1]
     with connect() as db:
-        db.execute("UPDATE heygen_video_jobs SET video_id = NULL, created_at = ?", (time.time() - 86400,))
+        db.execute("UPDATE edume_private.heygen_video_jobs SET video_id = NULL, created_at = %s", (time.time() - 86400,))
     assert client.post("/api/heygen/videos", json=value).status_code == 409
     assert len(provider.calls) == 2
 
@@ -205,12 +211,56 @@ def test_inflight_submission_and_active_limit_prevent_duplicate_spending(service
     value = draft()
     first = client.post("/api/heygen/videos", json=value).json()
     with connect() as db:
-        db.execute("UPDATE heygen_video_jobs SET video_id = NULL, status = 'submitting' WHERE id = ?", (first["id"],))
+        db.execute("UPDATE edume_private.heygen_video_jobs SET video_id = NULL, status = 'submitting' WHERE id = %s", (first["id"],))
     assert client.post("/api/heygen/videos", json=value).status_code == 409
     assert len(provider.calls) == 1
     for _ in range(2):
         assert client.post("/api/heygen/videos", json=draft()).status_code == 202
     assert client.post("/api/heygen/videos", json=draft()).status_code == 429
+    assert len(provider.calls) == 3
+
+
+def test_concurrent_submissions_of_one_draft_create_one_job_and_one_provider_call(service):
+    client, provider, connect = service
+    value = draft()
+    original_create = provider.create
+
+    def slow_create(*args):
+        time.sleep(0.3)  # Keep the first submission in flight while the others arrive.
+        return original_create(*args)
+
+    provider.create = slow_create
+    workers = 6
+    gate = threading.Barrier(workers)
+
+    def submit(_):
+        browser = TestClient(client.app)
+        browser.cookies.set("math_tutor_session", "one")
+        gate.wait()
+        return browser.post("/api/heygen/videos", json=value).status_code
+
+    with ThreadPoolExecutor(workers) as pool:
+        statuses = list(pool.map(submit, range(workers)))
+    assert set(statuses) <= {202, 409} and 202 in statuses, statuses  # never a 500 from a unique-key race
+    assert len(provider.calls) == 1
+    with connect() as db:
+        assert db.execute("SELECT COUNT(*) AS n FROM edume_private.heygen_video_jobs").fetchone()["n"] == 1
+
+
+def test_active_limit_holds_under_concurrent_distinct_drafts(service):
+    client, provider, connect = service
+    workers = 8
+    gate = threading.Barrier(workers)
+
+    def submit(_):
+        browser = TestClient(client.app)
+        browser.cookies.set("math_tutor_session", "one")
+        gate.wait()
+        return browser.post("/api/heygen/videos", json=draft()).status_code
+
+    with ThreadPoolExecutor(workers) as pool:
+        statuses = list(pool.map(submit, range(workers)))
+    assert sorted(statuses) == [202] * 3 + [429] * 5, statuses
     assert len(provider.calls) == 3
 
 

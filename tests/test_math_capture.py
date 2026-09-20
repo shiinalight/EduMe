@@ -5,7 +5,6 @@ import asyncio
 import base64
 import copy
 import json
-import sqlite3
 from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
@@ -39,10 +38,9 @@ def envelope(value: Any = HANDWRITING, *, raw: str | None = None) -> dict[str, A
 
 
 @pytest.fixture(autouse=True)
-def offline_environment(monkeypatch, tmp_path):
+def offline_environment(monkeypatch):
     for name in ("GEMINI_API_KEY", "GEMINI_MODEL", "ELEVENLABS_API_KEY", "FIRECRAWL_API_KEY"):
         monkeypatch.delenv(name, raising=False)
-    monkeypatch.setenv("MATH_TUTOR_DB", str(tmp_path / "unused-test.sqlite3"))
     monkeypatch.setattr(capture, "_ACTIVE_CALLS", capture._ActiveCalls())
 
     async def no_network(*args, **kwargs):
@@ -552,7 +550,7 @@ def test_auth_must_provide_stable_student_id(learner):
         assert_private(browser.get("/api/capture/config"), 401)
 
 
-def test_async_auth_and_sqlite_row_contract():
+def test_async_auth_and_database_row_contract():
     async def async_auth(token):
         assert token == COOKIE
         return {"id": "student-uuid"}
@@ -560,9 +558,7 @@ def test_async_auth_and_sqlite_row_contract():
     with TestClient(app_for(auth=async_auth)) as browser:
         browser.cookies.set("math_tutor_session", COOKIE)
         assert_private(browser.get("/api/capture/config"))
-    with sqlite3.connect(":memory:") as db:
-        db.row_factory = sqlite3.Row
-        row = db.execute("SELECT 7 AS id").fetchone()
+    row = {"id": 7}  # The host's database rows are plain mappings (psycopg dict_row).
     with TestClient(app_for(auth=lambda token: row)) as browser:
         browser.cookies.set("math_tutor_session", COOKIE)
         assert_private(browser.get("/api/capture/config"))
