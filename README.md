@@ -12,6 +12,7 @@ One learner account, one private database, one process on port `8001`. Every AI-
 ## Contents
 
 - [What it does](#what-it-does)
+- [Screenshots](#screenshots)
 - [Architecture](#architecture)
 - [Quickstart](#quickstart)
 - [Configuration](#configuration)
@@ -33,6 +34,16 @@ One learner account, one private database, one process on port `8001`. Every AI-
 | **Avatar coach (optional)** | Turn the tutor's existing guidance into a narrated HeyGen video — narration only, it never changes the math or generates new content. |
 
 Reviewed questions are saved to a private per-student notebook and can be exported to portable JSON and re-imported later. Nothing here grades or invents answers for arbitrary imported questions — see [Prototype limitations](#prototype-limitations).
+
+## Screenshots
+
+**Your maths journey** — the learner's home page, showing the recommended topic order and the question library.
+
+![Your maths journey: topic order, question library and practice topics](docs/screenshots/maths-journey.png)
+
+**Guided practice** — handwriting canvas with the Math coach giving a hint after each line.
+
+![Pythagoras' theorem practice with the handwriting canvas and Math coach](docs/screenshots/pythagoras-practice.png)
 
 ## Architecture
 
